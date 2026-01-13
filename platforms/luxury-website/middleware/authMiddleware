@@ -1,0 +1,117 @@
+const jwt = require('jsonwebtoken');
+const Customer = require('../models/luxury_customers.js');
+
+const luxuryAuthMiddleware = async (req, res, next) => {
+  try {
+    // Get token from header
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Please provide a valid token.'
+      });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.LUXURY_JWT_SECRET || 'LUXURY_SECRET_789');
+    
+    // Check if it's a luxury platform token
+    if (decoded.platform !== 'luxury') {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid platform token. Please use the luxury portal.'
+      });
+    }
+
+    // Find customer
+    const customer = await Customer.findOne({
+      _id: decoded.id,
+      email: decoded.email,
+      platform: 'luxury',
+      isActive: true
+    });
+
+    if (!customer) {
+      return res.status(401).json({
+        success: false,
+        message: 'Customer not found or account is inactive.'
+      });
+    }
+
+    // Add customer to request object
+    req.customer = customer;
+    req.user = {
+      id: customer._id,
+      email: customer.email,
+      vipTier: customer.vipTier,
+      platform: customer.platform,
+      type: 'customer'
+    };
+    
+    next();
+  } catch (error) {
+    console.error('Luxury auth middleware error:', error);
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authentication token.'
+      });
+    }
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication token has expired. Please sign in again.'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Authentication error. Please contact our concierge for assistance.'
+    });
+  }
+};
+
+// VIP-only middleware
+const vipMiddleware = async (req, res, next) => {
+  try {
+    if (!req.customer || !req.customer.isVip) {
+      return res.status(403).json({
+        success: false,
+        message: 'VIP access required. This feature is only available to our VIP members.'
+      });
+    }
+    
+    next();
+  } catch (error) {
+    console.error('VIP middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Platinum/Diamond-only middleware
+const platinumMiddleware = async (req, res, next) => {
+  try {
+    if (!req.customer || !['platinum', 'diamond'].includes(req.customer.vipTier)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Platinum/Diamond VIP access required. This is an exclusive feature for our highest-tier members.'
+      });
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Platinum middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+module.exports = { luxuryAuthMiddleware, vipMiddleware, platinumMiddleware };

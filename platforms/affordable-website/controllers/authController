@@ -1,0 +1,364 @@
+const Customer = require('../models/affordable_customers');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+
+// Generate JWT Token
+const generateToken = (id, email, role) => {
+  return jwt.sign(
+    { id, email, role, platform: 'affordable' },
+    process.env.JWT_SECRET || 'AFFORDABLE_SECRET',
+    { expiresIn: '7d' }
+  );
+};
+
+// Customer Signup
+exports.signup = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Validation
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide name, email, and password'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    // Check if customer already exists
+    const existingCustomer = await Customer.findOne({ email: email.toLowerCase().trim() });
+    
+    if (existingCustomer) {
+      return res.status(409).json({
+        success: false,
+        message: 'Customer already exists with this email'
+      });
+    }
+
+    // Create customer
+    const customer = await Customer.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password,
+      platform: 'affordable',
+      role: 'customer',
+      isActive: true,
+      isVerified: false,
+      lastLogin: new Date()
+    });
+
+    // Generate token
+    const token = generateToken(customer._id, customer.email, customer.role);
+
+    // Remove password from response
+    const customerData = customer.toObject();
+    delete customerData.password;
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully!',
+      token,
+      customer: {
+        id: customer._id,
+        name: customer.name,
+        email: customer.email,
+        role: customer.role,
+        platform: customer.platform,
+        isVerified: customer.isVerified,
+        createdAt: customer.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Signup error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: messages
+      });
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already registered'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Customer Login
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validation
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email and password'
+      });
+    }
+
+    // Find customer
+    const customer = await Customer.findOne({ 
+      email: email.toLowerCase().trim(),
+      platform: 'affordable'
+    });
+
+    if (!customer) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if account is active
+    if (!customer.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is deactivated'
+      });
+    }
+
+    // Check if account is locked
+    if (customer.isLocked()) {
+      return res.status(423).json({
+        success: false,
+        message: 'Account is temporarily locked. Try again later.'
+      });
+    }
+
+    // Compare password
+    const isMatch = await customer.comparePassword(password);
+    
+    if (!isMatch) {
+      // Increment login attempts
+      await customer.incLoginAttempts();
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Reset login attempts on successful login
+    await customer.resetLoginAttempts();
+    
+    // Update last login
+    customer.lastLogin = new Date();
+    await customer.save();
+
+    // Generate token
+    const token = generateToken(customer._id, customer.email, customer.role);
+
+    // Remove password from response
+    const customerData = customer.toObject();
+    delete customerData.password;
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful!',
+      token,
+      customer: {
+        id: customer._id,
+        name: customer.name,
+        email: customer.email,
+        role: customer.role,
+        platform: customer.platform,
+        isVerified: customer.isVerified,
+        avatar: customer.avatar,
+        totalOrders: customer.totalOrders,
+        totalSpent: customer.totalSpent,
+        lastLogin: customer.lastLogin,
+        createdAt: customer.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Customer Logout
+exports.logout = async (req, res) => {
+  try {
+    // For JWT, logout is handled client-side by removing token
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Get Current Customer Profile
+exports.getProfile = async (req, res) => {
+  try {
+    const customer = await Customer.findById(req.user.id)
+      .select('-password -loginAttempts -lockUntil')
+      .populate('orders', 'orderNumber totalAmount status createdAt');
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      customer
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Update Customer Profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, phone, address } = req.body;
+    const updates = {};
+
+    if (name) updates.name = name.trim();
+    if (phone) updates.phone = phone.trim();
+    if (address) {
+      updates.address = {
+        street: address.street?.trim() || '',
+        city: address.city?.trim() || '',
+        state: address.state?.trim() || '',
+        country: address.country?.trim() || '',
+        zipCode: address.zipCode?.trim() || ''
+      };
+    }
+
+    const customer = await Customer.findByIdAndUpdate(
+      req.user.id,
+      updates,
+      { new: true, runValidators: true }
+    ).select('-password -loginAttempts -lockUntil');
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      customer
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: messages
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Change Password
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'All password fields are required'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New passwords do not match'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters'
+      });
+    }
+
+    // Get customer
+    const customer = await Customer.findById(req.user.id);
+    
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // Verify current password
+    const isMatch = await customer.comparePassword(currentPassword);
+    
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    // Update password
+    customer.password = newPassword;
+    await customer.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};

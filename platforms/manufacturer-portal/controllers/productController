@@ -1,0 +1,265 @@
+const Product = require("../models/Product");
+
+// Create Product
+exports.createProduct = async (req, res) => {
+  try {
+    if (req.user.role !== "manufacturer") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
+
+    const {
+      name,
+      category,
+      sku,
+      description,
+      price,
+      quantity,
+      availability,
+      color,
+      material,
+      size,
+      weight,
+      location,
+      image,
+      galleryImages,
+    } = req.body;
+
+    if (!name || !category || price === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, category, and price are required",
+      });
+    }
+
+    if (price <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Price must be greater than 0",
+      });
+    }
+
+    if (quantity !== undefined && quantity < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Quantity cannot be negative",
+      });
+    }
+
+    if (sku) {
+      const existingSku = await Product.findOne({ sku });
+      if (existingSku) {
+        return res.status(409).json({
+          success: false,
+          message: "SKU already exists",
+        });
+      }
+    }
+
+    const finalQuantity = quantity ? parseInt(quantity) : 0;
+    const finalAvailability =
+      availability ||
+      (finalQuantity > 0 ? "In Stock" : "Out of Stock");
+
+    const product = await Product.create({
+      manufacturer: req.user.id,
+      name: name.trim(),
+      category: category.trim(),
+      sku: sku?.trim(),
+      description: description?.trim(),
+      price: parseFloat(price),
+      quantity: finalQuantity,
+      availability: finalAvailability,
+      color: color?.trim(),
+      material: material?.trim(),
+      size: size?.trim(),
+      weight: weight?.trim(),
+      location: location?.trim(),
+      image:
+        image?.trim() ||
+        "https://via.placeholder.com/300x300?text=No+Image",
+      galleryImages: Array.isArray(galleryImages) ? galleryImages : [],
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Product created successfully",
+      product,
+    });
+  } catch (err) {
+    console.error("Create product error:", err);
+
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Duplicate key error",
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// Get All Products
+exports.getAllProducts = async (req, res) => {
+  try {
+    const products = await Product.find({
+      manufacturer: req.user.id,
+    }).sort({ createdAt: -1 });
+
+    res.json({ success: true, products });
+  } catch (err) {
+    console.error("Get products error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to fetch products" 
+    });
+  }
+};
+
+// Get Single Product
+exports.getProduct = async (req, res) => {
+  try {
+    const product = await Product.findOne({
+      _id: req.params.id,
+      manufacturer: req.user.id,
+    });
+
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Product not found" 
+      });
+    }
+
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error("Get product error:", err);
+    res.status(500).json({ 
+      success: false,
+      message: "Server error" 
+    });
+  }
+};
+
+// Update Product
+exports.updateProduct = async (req, res) => {
+  try {
+    const { 
+      name, category, sku, description, price, quantity, 
+      availability, color, material, size, weight, location, 
+      image, galleryImages 
+    } = req.body;
+
+    if (price !== undefined && price <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Price must be greater than 0",
+      });
+    }
+
+    if (quantity !== undefined && quantity < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Quantity cannot be negative",
+      });
+    }
+
+    if (sku) {
+      const existingProduct = await Product.findOne({
+        sku: sku.trim(),
+        manufacturer: req.user.id,
+        _id: { $ne: req.params.id }
+      });
+      if (existingProduct) {
+        return res.status(409).json({
+          success: false,
+          message: "SKU already exists in your catalogue",
+        });
+      }
+    }
+
+    const updateData = {
+      ...(name && { name: name.trim() }),
+      ...(category && { category: category.trim() }),
+      ...(sku && { sku: sku.trim() }),
+      ...(description && { description: description.trim() }),
+      ...(price && { price: parseFloat(price) }),
+      ...(quantity !== undefined && { quantity: parseInt(quantity) }),
+      ...(availability && { availability }),
+      ...(color && { color: color.trim() }),
+      ...(material && { material: material.trim() }),
+      ...(size && { size: size.trim() }),
+      ...(weight && { weight: weight.trim() }),
+      ...(location && { location: location.trim() }),
+      ...(image && { image: image.trim() }),
+      ...(galleryImages && { galleryImages })
+    };
+
+    const product = await Product.findOneAndUpdate(
+      { _id: req.params.id, manufacturer: req.user.id },
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Product not found or access denied" 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Product updated successfully",
+      product 
+    });
+  } catch (err) {
+    console.error("Update product error:", err);
+    
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "SKU already exists",
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to update product" 
+    });
+  }
+};
+
+// Delete Product
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findOneAndDelete({
+      _id: req.params.id,
+      manufacturer: req.user.id,
+    });
+
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Product not found or access denied" 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Product deleted successfully" 
+    });
+  } catch (err) {
+    console.error("Delete product error:", err);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to delete product" 
+    });
+  }
+};

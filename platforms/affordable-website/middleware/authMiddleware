@@ -1,0 +1,76 @@
+const jwt = require('jsonwebtoken');
+const Customer = require('../models/affordable_customers');
+
+const affordableAuthMiddleware = async (req, res, next) => {
+  try {
+    // Get token from header
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No authentication token, access denied'
+      });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'AFFORDABLE_SECRET');
+    
+    // Check if it's an affordable platform token
+    if (decoded.platform !== 'affordable') {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid platform token'
+      });
+    }
+
+    // Find customer
+    const customer = await Customer.findOne({
+      _id: decoded.id,
+      email: decoded.email,
+      platform: 'affordable',
+      isActive: true
+    });
+
+    if (!customer) {
+      return res.status(401).json({
+        success: false,
+        message: 'Customer not found or account is inactive'
+      });
+    }
+
+    // Add customer to request object
+    req.customer = customer;
+    req.user = {
+      id: customer._id,
+      email: customer.email,
+      role: customer.role,
+      platform: customer.platform
+    };
+    
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token'
+      });
+    }
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Token expired'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Server authentication error'
+    });
+  }
+};
+
+module.exports = affordableAuthMiddleware;

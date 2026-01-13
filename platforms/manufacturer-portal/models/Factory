@@ -1,0 +1,14 @@
+const mongoose = require("mongoose");
+
+const factorySchema = new mongoose.Schema(
+  {
+    manufacturer: { type: mongoose.Schema.Types.ObjectId, ref: "Manufacturer", required: true },
+    name: { type: String, required: true },
+    location: { type: String, required: true },
+    capacity: { type: String },
+    manager: { type: String },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model("Factory", factorySchema);
