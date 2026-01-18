@@ -7,6 +7,11 @@ const affordableRoutes = require('../platforms/affordable-website/routes/afforda
 const midrangeRoutes = require('../platforms/midrange-website/routes/midrange.routes');
 const luxuryRoutes = require('../platforms/luxury-website/routes/luxury.routes');
 
+// ip rate limit need to add middleware for all routes after completion  
+const { vendorLimiter, ecommerceLimiter, adminLimiter  } = require("../shared/middleware/rateLimiter");
+
+
+
 router.use("/", manufacturerRoutes);
 router.use('/', affordableRoutes);
 router.use('/', midrangeRoutes);
