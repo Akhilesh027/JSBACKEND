@@ -14,7 +14,7 @@ const midrangeAuthMiddleware = async (req, res, next) => {
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'MIDRANGE_SECRET_123');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Check if it's a mid-range platform token
     if (decoded.platform !== 'midrange') {

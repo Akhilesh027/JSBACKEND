@@ -8,6 +8,8 @@ const profileController = require("../controllers/profileController");
 const dashboardController = require("../controllers/dashboardController");
 const productController = require("../controllers/productController");
 const factoryController = require("../controllers/factoryController");
+const upload = require("../../../shared/middleware/upload");
+const purchaseOrderController = require("../controllers/purchaseOrderController");
 
 // Auth Routes
 router.post("/api/manufacturer/signup", authController.signup);
@@ -29,11 +31,33 @@ router.get("/api/products", authMiddleware, productController.getAllProducts);
 router.get("/api/products/:id", authMiddleware, productController.getProduct);
 router.put("/api/products/:id", authMiddleware, productController.updateProduct);
 router.delete("/api/products/:id", authMiddleware, productController.deleteProduct);
-
+router.post(
+  "/api/upload",
+  authMiddleware,
+  upload.single("image"),
+  productController.uploadImage
+);
+router.post(
+  "/api/upload/multiple",
+  authMiddleware,
+  upload.array("images", 5),
+  productController.uploadMultipleImages
+);
 // Factory Routes
 router.get("/api/factories", authMiddleware, factoryController.getAllFactories);
 router.post("/api/factories", authMiddleware, factoryController.createFactory);
 router.put("/api/factories/:id", authMiddleware, factoryController.updateFactory);
 router.delete("/api/factories/:id", authMiddleware, factoryController.deleteFactory);
+router.get(
+  "/api/manufacturer/orders/:manufacturerId",
+  authMiddleware,
+  purchaseOrderController.getOrdersByManufacturer
+);
 
+// ✅ OPTIONAL: manufacturer updates order status (accept/reject/completed)
+router.put(
+  "/api/manufacturer/orders/:orderId/status",
+  authMiddleware,
+  purchaseOrderController.updateOrderStatusByManufacturer
+);
 module.exports = router;

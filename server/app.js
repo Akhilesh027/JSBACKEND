@@ -39,6 +39,7 @@ app.use(
         // 1. By default, only allow things from your own domain
         "default-src": ["'self'"],
         
+      
         // 2. Allow inline styles (common in React/Vue/standard CSS)
         // Otherwise, your CSS might not load at all
         "style-src": ["'self'", "'unsafe-inline'"],
@@ -46,6 +47,7 @@ app.use(
         // 3. Allow images from your own site and 'data:' URIs (common for small icons)
         "img-src": ["'self'", "data:"],
         
+
         // 4. Prevent your site from being put in an iframe (Clickjacking protection)
         "frame-ancestors": ["'none'"],
         
@@ -66,7 +68,6 @@ app.use(hpp()); // Protects against parameter pollution
 // Routes
 app.use("/", AllRoutes);
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({

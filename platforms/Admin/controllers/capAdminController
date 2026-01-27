@@ -1,0 +1,166 @@
+// controllers/capAdminController.js
+const bcrypt = require("bcryptjs");
+const Admin = require("../models/Admin"); // ✅ create this model
+const jwt = require("jsonwebtoken");
+
+const normalizeRole = (role) => {
+  const allowed = [
+    "manufacturer_admin",
+    "vendor_admin",
+    "ecommerce_admin",
+    "cap_admin",
+  ];
+  return allowed.includes(role) ? role : null;
+};
+exports.loginAdmin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password)
+      return res.status(400).json({ message: "Email and password required" });
+
+    const admin = await Admin.findOne({ email: email.toLowerCase().trim() });
+    if (!admin) return res.status(401).json({ message: "Invalid credentials" });
+
+    if (admin.isActive === false) {
+      return res.status(403).json({ message: "Admin account is deactivated" });
+    }
+
+    const ok = await bcrypt.compare(password, admin.password);
+    if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+
+    const token = jwt.sign(
+      { id: admin._id, role: admin.role },
+      process.env.JWT_SECRET || "dev_secret",
+      { expiresIn: "7d" }
+    );
+
+    return res.json({
+      message: "Login successful",
+      token,
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        isActive: admin.isActive,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+// ✅ POST /api/admin/cap/admins
+exports.createAdmin = async (req, res) => {
+  try {
+    const { name, email, mobile, role, password } = req.body;
+
+    if (!name || !email || !mobile || !role || !password) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const cleanRole = normalizeRole(role);
+    if (!cleanRole) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
+    // unique email
+    const existing = await Admin.findOne({ email: email.toLowerCase().trim() });
+    if (existing) {
+      return res.status(409).json({ message: "Email already exists" });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const admin = await Admin.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      mobile: mobile.trim(),
+      role: cleanRole,
+      password: hashed,
+      isActive: true,
+    });
+
+    return res.status(201).json({
+      message: "Admin created successfully",
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        mobile: admin.mobile,
+        role: admin.role,
+        isActive: admin.isActive,
+        createdAt: admin.createdAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+
+// ✅ GET /api/admin/cap/admins
+exports.listAdmins = async (req, res) => {
+  try {
+    const admins = await Admin.find({})
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json(admins);
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+
+// ✅ PATCH /api/admin/cap/admins/:id/role
+exports.updateAdminRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    const cleanRole = normalizeRole(role);
+    if (!cleanRole) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
+    const admin = await Admin.findByIdAndUpdate(
+      id,
+      { role: cleanRole },
+      { new: true }
+    ).select("-password");
+
+    if (!admin) return res.status(404).json({ message: "Admin not found" });
+
+    return res.json({ message: "Role updated", admin });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+
+// ✅ DELETE /api/admin/cap/admins/:id
+exports.deleteAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const admin = await Admin.findByIdAndDelete(id);
+    if (!admin) return res.status(404).json({ message: "Admin not found" });
+
+    return res.json({ message: "Admin deleted" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+exports.updateAdminActive = async (req, res) => {
+  try {
+    const admin = await Admin.findById(req.params.id);
+    if (!admin) return res.status(404).json({ message: "Admin not found" });
+
+    admin.isActive = !admin.isActive;
+    await admin.save();
+
+    const clean = await Admin.findById(admin._id).select("-password");
+    return res.json({ message: "Updated", admin: clean });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};

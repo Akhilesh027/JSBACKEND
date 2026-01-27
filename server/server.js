@@ -1,7 +1,9 @@
 require("dotenv").config();
 const connectDB = require("../config/db");
 const app = require("./app");
- 
+ const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first");
+
 
 const startServer = async () => {
   await connectDB(); // DB will be connected first

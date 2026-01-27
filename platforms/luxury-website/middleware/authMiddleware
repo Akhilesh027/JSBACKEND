@@ -14,7 +14,7 @@ const luxuryAuthMiddleware = async (req, res, next) => {
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.LUXURY_JWT_SECRET || 'LUXURY_SECRET_789');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'LUXURY_SECRET_789');
     
     // Check if it's a luxury platform token
     if (decoded.platform !== 'luxury') {

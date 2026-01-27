@@ -1,0 +1,151 @@
+// controllers/midrangeOrderController.js
+const mongoose = require("mongoose");
+const MidRangeCart = require("../models/MidRangeCart"); // ✅ your cart model
+const MidrangeAddress = require("../models/MidrangeAddress");
+const MidrangeOrder = require("../models/MidrangeOrder.js");
+const Product = require("../../manufacturer-portal/models/Product");
+
+const WEBSITE = "mid_range";
+const ALLOWED_TIER = "mid_range";
+const ALLOWED_STATUS = "approved";
+const DISCOUNT_PERCENT = 10;
+
+function computeDiscount(price) {
+  const discountAmount = Math.round((Number(price || 0) * DISCOUNT_PERCENT) / 100);
+  const finalPrice = Number(price || 0) - discountAmount;
+  return { discountAmount, finalPrice };
+}
+
+exports.placeOrder = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { addressId, paymentMethod = "COD" } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(addressId)) {
+      return res.status(400).json({ message: "Invalid addressId" });
+    }
+
+    const address = await MidrangeAddress.findOne({
+      _id: addressId,
+      userId,
+      website: WEBSITE,
+    }).lean();
+
+    if (!address) return res.status(404).json({ message: "Address not found" });
+
+    const cart = await MidRangeCart.findOne({ userId }).lean();
+    if (!cart || !cart.items || cart.items.length === 0) {
+      return res.status(400).json({ message: "Cart is empty" });
+    }
+
+    // hydrate allowed products
+    const productIds = cart.items.map((i) => i.productId);
+    const products = await Product.find({
+      _id: { $in: productIds },
+      tier: ALLOWED_TIER,
+      status: ALLOWED_STATUS,
+    }).lean();
+
+    const pMap = new Map(products.map((p) => [String(p._id), p]));
+
+    const orderItems = [];
+    for (const it of cart.items) {
+      const p = pMap.get(String(it.productId));
+      if (!p) continue;
+
+      const qty = Math.max(1, Number(it.quantity) || 1);
+      const { discountAmount, finalPrice } = computeDiscount(p.price);
+
+      orderItems.push({
+        productId: p._id,
+        name: p.name,
+        image: p.image,
+        quantity: qty,
+        price: Number(p.price || 0),
+        discountPercent: DISCOUNT_PERCENT,
+        discountAmount,
+        finalPrice,
+      });
+    }
+
+    if (orderItems.length === 0) {
+      return res.status(400).json({ message: "No valid mid-range approved products in cart" });
+    }
+
+    const subtotal = orderItems.reduce((s, x) => s + x.finalPrice * x.quantity, 0);
+    const shipping = subtotal > 10000 ? 0 : 499;
+    const tax = Math.round(subtotal * 0.18);
+    const total = subtotal + shipping + tax;
+
+    const order = await MidrangeOrder.create({
+      userId,
+      website: WEBSITE,
+      items: orderItems,
+      addressSnapshot: {
+        fullName: address.fullName,
+        phone: address.phone,
+        line1: address.line1,
+        line2: address.line2,
+        landmark: address.landmark,
+        city: address.city,
+        state: address.state,
+        pincode: address.pincode,
+      },
+      totals: { subtotal, shipping, tax, total },
+      payment: {
+        method: paymentMethod,
+        status: paymentMethod === "COD" ? "pending" : "pending",
+      },
+      status: "placed",
+    });
+
+    // clear cart after order
+    await MidRangeCart.findOneAndUpdate(
+      { userId },
+      { $set: { items: [] } },
+      { new: true }
+    );
+
+    return res.json({ data: order, message: "Order placed successfully" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+exports.getOrderById = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid order id" });
+    }
+
+    const order = await MidrangeOrder.findOne({
+      _id: id,
+      userId,
+      website: "mid_range",
+    }).lean();
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    return res.json({ data: order });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+exports.getMyOrders = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const orders = await MidrangeOrder.find({
+      userId,
+      website: "mid_range",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({ data: orders });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};

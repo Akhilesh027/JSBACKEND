@@ -1,4 +1,4 @@
-const Manufacturer = require("../models/Manufacturer");
+const Manufacturer = require("../models/Manufacturer.js");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 

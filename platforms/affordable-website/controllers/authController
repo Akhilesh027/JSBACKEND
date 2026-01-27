@@ -247,57 +247,37 @@ exports.getProfile = async (req, res) => {
 // Update Customer Profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, phone, address } = req.body;
-    const updates = {};
+    const userId = req.user.id;
 
-    if (name) updates.name = name.trim();
-    if (phone) updates.phone = phone.trim();
-    if (address) {
-      updates.address = {
-        street: address.street?.trim() || '',
-        city: address.city?.trim() || '',
-        state: address.state?.trim() || '',
-        country: address.country?.trim() || '',
-        zipCode: address.zipCode?.trim() || ''
-      };
+    const { name, phone, avatar, email } = req.body;
+
+    // if you want to restrict email update, remove email from allowed updates.
+    const update = {};
+    if (name !== undefined) update.name = name.trim();
+    if (phone !== undefined) update.phone = phone.trim();
+    if (avatar !== undefined) update.avatar = avatar.trim();
+    if (email !== undefined) update.email = email.trim().toLowerCase();
+
+    // Optional: validate phone format
+    if (update.phone && !/^\d{10}$/.test(update.phone.replace(/\D/g, ""))) {
+      return res.status(400).json({ error: "Phone must be 10 digits" });
     }
 
-    const customer = await Customer.findByIdAndUpdate(
-      req.user.id,
-      updates,
-      { new: true, runValidators: true }
-    ).select('-password -loginAttempts -lockUntil');
-
-    if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Customer not found'
-      });
+    // Optional: check email uniqueness
+    if (update.email) {
+      const exists = await User.findOne({ email: update.email, _id: { $ne: userId } });
+      if (exists) return res.status(400).json({ error: "Email already in use" });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully',
-      customer
-    });
-  } catch (error) {
-    console.error('Update profile error:', error);
-    
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: messages
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    const updated = await User.findByIdAndUpdate(userId, update, { new: true }).select("-password");
+    if (!updated) return res.status(404).json({ error: "User not found" });
+
+    return res.json({ user: updated });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to update profile" });
   }
 };
+
 
 // Change Password
 exports.changePassword = async (req, res) => {
