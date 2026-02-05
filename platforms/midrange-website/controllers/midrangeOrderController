@@ -1,9 +1,12 @@
 // controllers/midrangeOrderController.js
 const mongoose = require("mongoose");
-const MidRangeCart = require("../models/MidRangeCart"); // ✅ your cart model
+const MidRangeCart = require("../models/MidRangeCart");
 const MidrangeAddress = require("../models/MidrangeAddress");
 const MidrangeOrder = require("../models/MidrangeOrder.js");
 const Product = require("../../manufacturer-portal/models/Product");
+
+// ✅ ADD: midrange customer model (update path/name if different)
+const MidrangeCustomer = require("../models/midrange_customers.js");
 
 const WEBSITE = "mid_range";
 const ALLOWED_TIER = "mid_range";
@@ -69,7 +72,9 @@ exports.placeOrder = async (req, res) => {
     }
 
     if (orderItems.length === 0) {
-      return res.status(400).json({ message: "No valid mid-range approved products in cart" });
+      return res.status(400).json({
+        message: "No valid mid-range approved products in cart",
+      });
     }
 
     const subtotal = orderItems.reduce((s, x) => s + x.finalPrice * x.quantity, 0);
@@ -77,6 +82,7 @@ exports.placeOrder = async (req, res) => {
     const tax = Math.round(subtotal * 0.18);
     const total = subtotal + shipping + tax;
 
+    // ✅ create order
     const order = await MidrangeOrder.create({
       userId,
       website: WEBSITE,
@@ -94,16 +100,34 @@ exports.placeOrder = async (req, res) => {
       totals: { subtotal, shipping, tax, total },
       payment: {
         method: paymentMethod,
-        status: paymentMethod === "COD" ? "pending" : "pending",
+        status: "pending",
       },
       status: "placed",
     });
 
-    // clear cart after order
+    // ✅ clear cart after order
     await MidRangeCart.findOneAndUpdate(
       { userId },
       { $set: { items: [] } },
       { new: true }
+    );
+
+    // ✅ UPDATE CUSTOMER STATS (order count + lifetime amount)
+    // Your midrange customer schema should have these fields:
+    // totalOrders: Number default 0
+    // lifetimeSpend: Number default 0
+    // lastOrderDate: Date
+    await MidrangeCustomer.updateOne(
+      { _id: userId },
+      {
+        $inc: {
+          totalOrders: 1,
+          lifetimeSpend: total,
+        },
+        $set: {
+          lastOrderDate: new Date(),
+        },
+      }
     );
 
     return res.json({ data: order, message: "Order placed successfully" });
@@ -111,6 +135,7 @@ exports.placeOrder = async (req, res) => {
     return res.status(500).json({ message: err.message || "Server error" });
   }
 };
+
 exports.getOrderById = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -123,7 +148,7 @@ exports.getOrderById = async (req, res) => {
     const order = await MidrangeOrder.findOne({
       _id: id,
       userId,
-      website: "mid_range",
+      website: WEBSITE,
     }).lean();
 
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -133,13 +158,14 @@ exports.getOrderById = async (req, res) => {
     return res.status(500).json({ message: err.message || "Server error" });
   }
 };
+
 exports.getMyOrders = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const orders = await MidrangeOrder.find({
       userId,
-      website: "mid_range",
+      website: WEBSITE,
     })
       .sort({ createdAt: -1 })
       .lean();

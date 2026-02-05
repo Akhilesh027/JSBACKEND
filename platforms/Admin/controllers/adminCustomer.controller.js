@@ -1,12 +1,19 @@
+// controllers/adminCustomer.controller.js
+
+/* ---------------- MODELS ---------------- */
 const AffordableCustomer = require("../../affordable-website/models/affordable_customers.js");
 const MidrangeCustomer = require("../../midrange-website/models/midrange_customers.js");
 const LuxuryCustomer = require("../../luxury-website/models/luxury_customers.js");
 
 // ✅ Orders models (update names if different)
 const AffordableOrder = require("../../affordable-website/models/AffordableOrder.js");
+const MidrangeOrder = require("../../midrange-website/models/MidrangeOrder.js");     // ✅ ADD
+const LuxuryOrder = require("../../luxury-website/models/luxury_orders.js");          // ✅ ADD
 
 // ✅ Address models (update names if different)
 const AffordableAddress = require("../../affordable-website/models/AffordableAddress.js");
+const MidrangeAddress = require("../../midrange-website/models/MidrangeAddress.js"); // ✅ ADD
+const LuxuryAddress = require("../../luxury-website/models/luxury_customers.js");       // ✅ ADD
 
 /* ---------------- HELPERS ---------------- */
 const safeDate = (d) => {
@@ -18,13 +25,7 @@ const safeDate = (d) => {
 const toStr = (v) => (v == null ? "" : String(v));
 
 const sumOrderTotal = (o) => {
-  // supports both possible schemas
-  const total =
-    o?.pricing?.total ??
-    o?.totalAmount ??
-    o?.total ??
-    0;
-
+  const total = o?.pricing?.total ?? o?.totals?.total ?? o?.totalAmount ?? o?.total ?? 0;
   return Number(total || 0);
 };
 
@@ -43,7 +44,10 @@ const normalizeCustomerFull = ({ doc, segment, ordersDetailed, addressesDetailed
   const lastOrder = Array.isArray(ordersDetailed)
     ? ordersDetailed
         .slice()
-        .sort((a, b) => new Date(getOrderCreatedAt(b) || 0) - new Date(getOrderCreatedAt(a) || 0))[0]
+        .sort(
+          (a, b) =>
+            new Date(getOrderCreatedAt(b) || 0) - new Date(getOrderCreatedAt(a) || 0)
+        )[0]
     : null;
 
   return {
@@ -89,12 +93,31 @@ async function fetchSegmentCustomersWithDetails({
   OrderModel,
   AddressModel,
 }) {
+  // ✅ SAFETY GUARDS (prevents your error)
+  if (!CustomerModel || typeof CustomerModel.find !== "function") {
+    console.error(`❌ ${segment}: CustomerModel missing/invalid`);
+    return [];
+  }
+
   const customers = await CustomerModel.find({}).lean();
   if (!customers.length) return [];
 
-  // collect ids from customers
-  const orderIds = customers.flatMap((c) => (Array.isArray(c.orders) ? c.orders : [])).filter(Boolean);
-  const addressIds = customers.flatMap((c) => (Array.isArray(c.addresses) ? c.addresses : [])).filter(Boolean);
+  // ✅ If no OrderModel/AddressModel for this segment, return basic customer info
+  const hasOrderModel = OrderModel && typeof OrderModel.find === "function";
+  const hasAddressModel = AddressModel && typeof AddressModel.find === "function";
+
+  // collect ids from customers (if fields exist)
+  const orderIds = hasOrderModel
+    ? customers
+        .flatMap((c) => (Array.isArray(c.orders) ? c.orders : []))
+        .filter(Boolean)
+    : [];
+
+  const addressIds = hasAddressModel
+    ? customers
+        .flatMap((c) => (Array.isArray(c.addresses) ? c.addresses : []))
+        .filter(Boolean)
+    : [];
 
   // fetch all orders + addresses in batch (fast)
   const [orders, addresses] = await Promise.all([
@@ -108,12 +131,19 @@ async function fetchSegmentCustomersWithDetails({
 
   // build enriched customers
   const enriched = customers.map((c) => {
-    const ordersDetailed = (c.orders || []).map((id) => orderById.get(toStr(id))).filter(Boolean);
+    const ordersDetailed = hasOrderModel
+      ? (c.orders || []).map((id) => orderById.get(toStr(id))).filter(Boolean)
+      : [];
 
-    const addressesDetailed = (c.addresses || []).map((id) => addressById.get(toStr(id))).filter(Boolean);
+    const addressesDetailed = hasAddressModel
+      ? (c.addresses || []).map((id) => addressById.get(toStr(id))).filter(Boolean)
+      : [];
 
     // sort orders newest first
-    ordersDetailed.sort((a, b) => new Date(getOrderCreatedAt(b) || 0) - new Date(getOrderCreatedAt(a) || 0));
+    ordersDetailed.sort(
+      (a, b) =>
+        new Date(getOrderCreatedAt(b) || 0) - new Date(getOrderCreatedAt(a) || 0)
+    );
 
     return normalizeCustomerFull({
       doc: c,
@@ -153,7 +183,8 @@ exports.getAllCustomersFullDetails = async (req, res) => {
         fetchSegmentCustomersWithDetails({
           segment: "midrange",
           CustomerModel: MidrangeCustomer,
-        
+          OrderModel: MidrangeOrder,       // ✅ ADD
+          AddressModel: MidrangeAddress,   // ✅ ADD
         })
       );
     }
@@ -163,7 +194,8 @@ exports.getAllCustomersFullDetails = async (req, res) => {
         fetchSegmentCustomersWithDetails({
           segment: "luxury",
           CustomerModel: LuxuryCustomer,
-      
+          OrderModel: LuxuryOrder,         // ✅ ADD
+          AddressModel: LuxuryAddress,     // ✅ ADD
         })
       );
     }
@@ -171,7 +203,6 @@ exports.getAllCustomersFullDetails = async (req, res) => {
     const results = await Promise.all(tasks);
     const merged = results.flat();
 
-    // sort by lastOrderDate (or updatedAt)
     merged.sort((a, b) => {
       const ad = new Date(a.lastOrderDate || a.updatedAt || a.createdAt || 0).getTime();
       const bd = new Date(b.lastOrderDate || b.updatedAt || b.createdAt || 0).getTime();
@@ -185,28 +216,78 @@ exports.getAllCustomersFullDetails = async (req, res) => {
   }
 };
 
-/* ---------------- (OPTIONAL) OLD SUMMARY ENDPOINT ---------------- */
+/* ---------------- SUMMARY ENDPOINT (MERGED) ---------------- */
 /**
  * GET /api/admin/customers/all  (summary)
+ * optional: ?segment=affordable|midrange|luxury
  */
 exports.getAllCustomers = async (req, res) => {
   try {
-    const customers = await AffordableCustomer.find({}).lean();
+    const { segment } = req.query;
 
-    const merged = customers.map((doc) => ({
-      id: doc._id,
-      name: doc.name || "",
-      email: doc.email || "",
-      mobile: doc.mobile || doc.phone || "",
-      city: doc.city || doc.address?.city || "",
-      state: doc.state || doc.address?.state || "",
-      totalOrders: Number(doc.totalOrders || doc.ordersCount || doc.orders?.length || 0),
-      lifetimeSpend: Number(doc.lifetimeSpend || doc.totalSpend || doc.totalSpent || 0),
-      lastOrderDate: doc.lastOrderDate || doc.lastLogin || doc.updatedAt || doc.createdAt,
-      segment: "affordable",
-    }));
+    const tasks = [];
 
-    merged.sort((a, b) => new Date(b.lastOrderDate) - new Date(a.lastOrderDate));
+    if (!segment || segment === "affordable") {
+      tasks.push(
+        AffordableCustomer.find({}).lean().then((list) =>
+          list.map((doc) => ({
+            id: String(doc._id),
+            name: doc.name || "",
+            email: doc.email || "",
+            mobile: doc.mobile || doc.phone || "",
+            city: doc.city || doc.address?.city || "",
+            state: doc.state || doc.address?.state || "",
+            totalOrders: Number(doc.totalOrders || doc.ordersCount || doc.orders?.length || 0),
+            lifetimeSpend: Number(doc.lifetimeSpend || doc.totalSpend || doc.totalSpent || 0),
+            lastOrderDate: doc.lastOrderDate || doc.lastLogin || doc.updatedAt || doc.createdAt,
+            segment: "affordable",
+          }))
+        )
+      );
+    }
+
+    if (!segment || segment === "midrange") {
+      tasks.push(
+        MidrangeCustomer.find({}).lean().then((list) =>
+          list.map((doc) => ({
+            id: String(doc._id),
+            name: doc.name || "",
+            email: doc.email || "",
+            mobile: doc.mobile || doc.phone || "",
+            city: doc.city || doc.address?.city || "",
+            state: doc.state || doc.address?.state || "",
+            totalOrders: Number(doc.totalOrders || doc.ordersCount || doc.orders?.length || 0),
+            lifetimeSpend: Number(doc.lifetimeSpend || doc.totalSpend || doc.totalSpent || 0),
+            lastOrderDate: doc.lastOrderDate || doc.lastLogin || doc.updatedAt || doc.createdAt,
+            segment: "midrange",
+          }))
+        )
+      );
+    }
+
+    if (!segment || segment === "luxury") {
+      tasks.push(
+        LuxuryCustomer.find({}).lean().then((list) =>
+          list.map((doc) => ({
+            id: String(doc._id),
+            name: doc.name || "",
+            email: doc.email || "",
+            mobile: doc.mobile || doc.phone || "",
+            city: doc.city || doc.address?.city || "",
+            state: doc.state || doc.address?.state || "",
+            totalOrders: Number(doc.totalOrders || doc.ordersCount || doc.orders?.length || 0),
+            lifetimeSpend: Number(doc.lifetimeSpend || doc.totalSpend || doc.totalSpent || 0),
+            lastOrderDate: doc.lastOrderDate || doc.lastLogin || doc.updatedAt || doc.createdAt,
+            segment: "luxury",
+          }))
+        )
+      );
+    }
+
+    const results = await Promise.all(tasks);
+    const merged = results.flat();
+
+    merged.sort((a, b) => new Date(b.lastOrderDate || 0) - new Date(a.lastOrderDate || 0));
 
     return res.status(200).json({ data: merged });
   } catch (error) {

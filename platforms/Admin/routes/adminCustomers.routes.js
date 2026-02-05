@@ -97,11 +97,12 @@ router.patch("/api/admin/midrange/orders/:id/status", MidrangeorderController.up
 // --------------------
 // ✅ Website Orders - Luxury (optional later)
 // --------------------
-// const LuxuryorderController = require("../controllers/LuxuryorderController");
-// router.get("/api/admin/luxury/orders", LuxuryorderController.getOrders);
-// router.patch("/api/admin/luxury/orders/:id/approve", LuxuryorderController.approveOrder);
-// router.patch("/api/admin/luxury/orders/:id/reject", LuxuryorderController.rejectOrder);
-// router.patch("/api/admin/luxury/orders/:id/status", LuxuryorderController.updateOrderStatus);
+ const LuxuryorderController = require("../controllers/adminLuxury.controller");
+ router.get("/api/admin/luxury/orders", LuxuryorderController.getLuxuryOrdersAdmin);
+ router.patch("/api/admin/luxury/orders/:id/approve", LuxuryorderController.confirmLuxuryOrder);
+ router.patch("/api/admin/luxury/orders/:id/reject", LuxuryorderController.cancelLuxuryOrderAdmin);
+ router.patch("/api/admin/luxury/orders/:id/status", LuxuryorderController.updateLuxuryOrderStatus);
+
 router.get("/api/admin/orders/all", AllOrdersController.getAllOrders);
 
 // --------------------

@@ -2,47 +2,90 @@ const Customer = require("../models/luxury_customers.js");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 
+// ✅ Stronger JWT secret handling
+const JWT_SECRET = process.env.JWT_SECRET || "LUXURY_SECRET_789";
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is not set in production");
+}
+
 // Generate JWT Token for luxury
 const generateToken = (id, email, vipTier) => {
   return jwt.sign(
     { id, email, platform: "luxury", vipTier, type: "customer" },
-    process.env.JWT_SECRET || "LUXURY_SECRET_789",
+    JWT_SECRET,
     { expiresIn: "30d" }
   );
 };
 
+const normalizeEmail = (email) => String(email || "").toLowerCase().trim();
+const normalizePhone = (phone) => String(phone || "").trim();
+
+const validatePasswordStrength = (password) => {
+  if (!password || password.length < 8) {
+    return "Password must be at least 8 characters";
+  }
+  const hasUpperCase = /[A-Z]/.test(password);
+  const hasLowerCase = /[a-z]/.test(password);
+  const hasNumbers = /\d/.test(password);
+  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+    return "Password must contain uppercase, lowercase, numbers, and special characters";
+  }
+  return null;
+};
+
+const safeCustomerPayload = (customer) => ({
+  id: customer._id,
+  vipId: customer.vipId,
+  fullName: customer.fullName,
+  firstName: customer.firstName,
+  lastName: customer.lastName,
+  email: customer.email,
+  phone: customer.phone,
+  company: customer.company,
+  designation: customer.designation,
+  platform: customer.platform,
+  vipTier: customer.vipTier,
+  vipBadge: customer.vipBadge, // virtual
+  isVip: customer.isVip,
+  isVerified: customer.isVerified,
+  isActive: customer.isActive,
+  loyaltyPoints: customer.loyaltyPoints,
+  rewardTier: customer.rewardTier,
+  lastLogin: customer.lastLogin,
+  createdAt: customer.createdAt,
+  updatedAt: customer.updatedAt,
+});
+
 // ✅ Luxury Customer Signup
 exports.signup = async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, password, company, designation, preferences } =
-      req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      password,
+      company,
+      designation,
+      preferences,
+    } = req.body;
 
     if (!firstName || !lastName || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
-        message: "Please provide all required fields: firstName, lastName, email, phone, password",
+        message:
+          "Please provide all required fields: firstName, lastName, email, phone, password",
       });
     }
 
-    // Password strength validation
-    if (password.length < 8) {
-      return res.status(400).json({ success: false, message: "Password must be at least 8 characters" });
+    const pwErr = validatePasswordStrength(password);
+    if (pwErr) {
+      return res.status(400).json({ success: false, message: pwErr });
     }
 
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumbers = /\d/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-
-    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must contain uppercase, lowercase, numbers, and special characters",
-      });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const normalizedPhone = String(phone).trim();
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPhone = normalizePhone(phone);
 
     const existingEmail = await Customer.findOne({ email: normalizedEmail });
     if (existingEmail) {
@@ -54,32 +97,37 @@ exports.signup = async (req, res) => {
       return res.status(409).json({ success: false, message: "Phone already registered." });
     }
 
-    // ✅ IMPORTANT: do NOT hash here if your model hashes in pre-save
+    // ✅ IMPORTANT: store RAW password here.
+    // Model pre('save') will hash it once.
     const customer = await Customer.create({
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
+      firstName: String(firstName).trim(),
+      lastName: String(lastName).trim(),
       email: normalizedEmail,
       phone: normalizedPhone,
-      password, // ✅ raw here (model should hash)
+      password,
 
-      company: company?.trim(),
-      designation: designation?.trim(),
+      company: company ? String(company).trim() : undefined,
+      designation: designation ? String(designation).trim() : undefined,
+
       platform: "luxury",
       vipTier: "standard",
       isVip: false,
       isActive: true,
       isVerified: false,
+
       preferences: preferences || {
         newsletter: true,
         exclusiveInvites: true,
         conciergeAlerts: true,
       },
+
       dataConsent: {
         termsAccepted: true,
         termsAcceptedAt: new Date(),
         marketingConsent: true,
         privacyConsent: true,
       },
+
       lastLogin: new Date(),
     });
 
@@ -89,26 +137,25 @@ exports.signup = async (req, res) => {
       success: true,
       message: `Welcome ${customer.fullName}! Your luxury account has been created.`,
       token,
-      customer: {
-        id: customer._id,
-        fullName: customer.fullName,
-        firstName: customer.firstName,
-        lastName: customer.lastName,
-        email: customer.email,
-        phone: customer.phone,
-        vipTier: customer.vipTier,
-        isVip: customer.isVip,
-        isVerified: customer.isVerified,
-        createdAt: customer.createdAt,
-      },
+      customer: safeCustomerPayload(customer),
     });
   } catch (error) {
     console.error("Luxury signup error:", error);
+
+    // ✅ handle mongoose duplicate key error too
+    if (error?.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || "field";
+      return res.status(409).json({
+        success: false,
+        message: `${field} already exists`,
+      });
+    }
+
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
-// ✅ Luxury Customer Login (fixed)
+// ✅ Luxury Customer Login
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -117,29 +164,21 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please provide email and password" });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = normalizeEmail(email);
 
-    // ✅ DO NOT filter by platform unless you're sure platform exists in DB
-    // If platform exists, keep it. If not, remove it.
+    // password is select:false, so we must select it for comparison
     const customer = await Customer.findOne({ email: normalizedEmail }).select("+password");
 
     if (!customer) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    if (!customer.isActive) {
+    if (customer.isActive === false) {
       return res.status(403).json({ success: false, message: "Account is deactivated" });
     }
 
-    // ✅ Compare password
-    let isMatch = false;
-
-    if (typeof customer.comparePassword === "function") {
-      isMatch = await customer.comparePassword(password);
-    } else {
-      isMatch = await bcrypt.compare(password, customer.password);
-    }
-
+    // ✅ Compare password (works because we selected +password)
+    const isMatch = await customer.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
@@ -149,23 +188,14 @@ exports.login = async (req, res) => {
 
     const token = generateToken(customer._id, customer.email, customer.vipTier);
 
+    // ✅ remove password from response object
+    customer.password = undefined;
+
     return res.status(200).json({
       success: true,
       message: `Welcome back, ${customer.fullName}!`,
       token,
-      customer: {
-        id: customer._id,
-        fullName: customer.fullName,
-        firstName: customer.firstName,
-        lastName: customer.lastName,
-        email: customer.email,
-        phone: customer.phone,
-        vipTier: customer.vipTier,
-        isVip: customer.isVip,
-        isVerified: customer.isVerified,
-        lastLogin: customer.lastLogin,
-        createdAt: customer.createdAt,
-      },
+      customer: safeCustomerPayload(customer),
     });
   } catch (error) {
     console.error("Luxury login error:", error);
@@ -173,7 +203,7 @@ exports.login = async (req, res) => {
   }
 };
 
-// ✅ Logout
+// ✅ Logout (stateless JWT)
 exports.logout = async (req, res) => {
   try {
     return res.status(200).json({
@@ -189,12 +219,12 @@ exports.logout = async (req, res) => {
 // ✅ Get Profile
 exports.getProfile = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.user.id)
-      .select("-password -loginAttempts -lockUntil")
-      .populate("assignedConcierge", "name email phone")
-      .populate("appointments", "date time service status")
-      .populate("purchaseHistory.productId", "name category price images");
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
+    const customer = await Customer.findById(req.user.id)
+      
     if (!customer) {
       return res.status(404).json({ success: false, message: "Customer not found" });
     }
@@ -210,55 +240,76 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// ✅ Update Profile
+// ✅ Update Profile (merge safely + phone duplicate check)
 exports.updateProfile = async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     const { firstName, lastName, phone, company, designation, address, preferences } = req.body;
 
-    const updates = {};
-    if (firstName) updates.firstName = firstName.trim();
-    if (lastName) updates.lastName = lastName.trim();
-    if (phone) updates.phone = String(phone).trim();
-    if (company) updates.company = company.trim();
-    if (designation) updates.designation = designation.trim();
-
-    if (address) {
-      updates.address = {
-        primary: {
-          street: address.primary?.street?.trim() || "",
-          city: address.primary?.city?.trim() || "",
-          state: address.primary?.state?.trim() || "",
-          country: address.primary?.country?.trim() || "",
-          zipCode: address.primary?.zipCode?.trim() || "",
-        },
-        secondary: {
-          street: address.secondary?.street?.trim() || "",
-          city: address.secondary?.city?.trim() || "",
-          state: address.secondary?.state?.trim() || "",
-          country: address.secondary?.country?.trim() || "",
-          zipCode: address.secondary?.zipCode?.trim() || "",
-        },
-      };
-    }
-
-    if (preferences) {
-      updates.preferences = {
-        ...preferences,
-        style: preferences.style || [],
-        materials: preferences.materials || [],
-        colors: preferences.colors || [],
-        budgetRange: preferences.budgetRange || { min: 0, max: 0 },
-      };
-    }
-
-    const customer = await Customer.findByIdAndUpdate(req.user.id, updates, {
-      new: true,
-      runValidators: true,
-    }).select("-password -loginAttempts -lockUntil");
-
+    const customer = await Customer.findById(req.user.id).select("-password -loginAttempts -lockUntil");
     if (!customer) {
       return res.status(404).json({ success: false, message: "Customer not found" });
     }
+
+    if (phone) {
+      const normalizedPhone = normalizePhone(phone);
+      const dup = await Customer.findOne({ phone: normalizedPhone, _id: { $ne: req.user.id } });
+      if (dup) {
+        return res.status(409).json({ success: false, message: "Phone already registered." });
+      }
+      customer.phone = normalizedPhone;
+    }
+
+    if (firstName) customer.firstName = String(firstName).trim();
+    if (lastName) customer.lastName = String(lastName).trim();
+    if (company !== undefined) customer.company = company ? String(company).trim() : "";
+    if (designation !== undefined) customer.designation = designation ? String(designation).trim() : "";
+
+    // ✅ merge address without wiping
+    if (address) {
+      const current = customer.address || {};
+      customer.address = {
+        primary: {
+          ...(current.primary || {}),
+          ...(address.primary || {}),
+        },
+        secondary: {
+          ...(current.secondary || {}),
+          ...(address.secondary || {}),
+        },
+      };
+
+      // trim strings
+      const trimObj = (obj) => {
+        const out = { ...obj };
+        Object.keys(out).forEach((k) => {
+          if (typeof out[k] === "string") out[k] = out[k].trim();
+        });
+        return out;
+      };
+      customer.address.primary = trimObj(customer.address.primary);
+      customer.address.secondary = trimObj(customer.address.secondary);
+    }
+
+    // ✅ merge preferences safely
+    if (preferences) {
+      const currentPrefs = customer.preferences || {};
+      customer.preferences = {
+        ...currentPrefs,
+        ...preferences,
+        style: Array.isArray(preferences.style) ? preferences.style : currentPrefs.style || [],
+        materials: Array.isArray(preferences.materials)
+          ? preferences.materials
+          : currentPrefs.materials || [],
+        colors: Array.isArray(preferences.colors) ? preferences.colors : currentPrefs.colors || [],
+        budgetRange: preferences.budgetRange || currentPrefs.budgetRange || { min: 0, max: 0 },
+      };
+    }
+
+    await customer.save();
 
     return res.status(200).json({
       success: true,
@@ -277,10 +328,10 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// ✅ Upgrade VIP Tier (Admin/Concierge use: /customers/:customerId/upgrade-tier)
+// ✅ Upgrade VIP Tier (Admin/Concierge)
 exports.upgradeVipTier = async (req, res) => {
   try {
-    const { customerId } = req.params; // ✅ upgrade other customer
+    const { customerId } = req.params;
     const { vipTier, notes } = req.body;
 
     if (!["silver", "gold", "platinum", "diamond"].includes(vipTier)) {
@@ -295,9 +346,10 @@ exports.upgradeVipTier = async (req, res) => {
     const newIndex = tiers.indexOf(vipTier);
 
     if (newIndex <= currentIndex) {
-      return res
-        .status(400)
-        .json({ success: false, message: `Cannot downgrade from ${customer.vipTier} to ${vipTier}` });
+      return res.status(400).json({
+        success: false,
+        message: `Cannot downgrade from ${customer.vipTier} to ${vipTier}`,
+      });
     }
 
     customer.vipTier = vipTier;
@@ -316,6 +368,7 @@ exports.upgradeVipTier = async (req, res) => {
 
     await customer.save();
 
+    // ✅ token should update because vipTier is inside JWT
     const token = generateToken(customer._id, customer.email, customer.vipTier);
 
     return res.status(200).json({
@@ -339,9 +392,13 @@ exports.upgradeVipTier = async (req, res) => {
   }
 };
 
-// ✅ Concierge request (placeholder)
+// ✅ Concierge request
 exports.requestConcierge = async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     const { serviceType, requirements, preferredDate, notes } = req.body;
 
     if (!serviceType || !requirements) {
@@ -356,11 +413,12 @@ exports.requestConcierge = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message:
-        "Concierge service request received. Our team will contact you within 24 hours.",
+      message: "Concierge service request received. Our team will contact you within 24 hours.",
       requestId: `CON-${Date.now()}`,
       estimatedResponse: "24 hours",
       contactPerson: customer.assignedConcierge ? "Your assigned concierge" : "Our luxury support team",
+      preferredDate: preferredDate || null,
+      notes: notes || null,
     });
   } catch (error) {
     console.error("Concierge request error:", error);
