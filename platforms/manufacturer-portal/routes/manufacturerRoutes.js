@@ -7,7 +7,7 @@ const authController = require("../controllers/authController");
 const profileController = require("../controllers/profileController");
 const dashboardController = require("../controllers/dashboardController");
 const productController = require("../controllers/productController");
-const factoryController = require("../controllers/factoryController");
+const factoryController = require("../controllers/factoryController.js");
 const upload = require("../../../shared/middleware/upload");
 const purchaseOrderController = require("../controllers/purchaseOrderController");
 

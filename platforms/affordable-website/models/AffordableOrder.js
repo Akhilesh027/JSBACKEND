@@ -4,7 +4,10 @@ const orderItemSchema = new mongoose.Schema(
   {
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
     quantity: { type: Number, required: true, min: 1 },
-
+price: { type: Number, required: true },       // original
+        discountPercent: { type: Number, default: 10 },
+        discountAmount: { type: Number, default: 0 },
+        finalPrice: { type: Number, required: true },  // discounted
     // Snapshot for safe history (even if product changes later)
     productSnapshot: {
       name: String,

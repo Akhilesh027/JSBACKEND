@@ -1,3 +1,9 @@
+// ✅ Updated Product schema to support Parent Category + Sub Category (ID + slug/name)
+// - Keeps your existing `category` and `subcategory` string fields (for easy filtering)
+// - Adds `categoryId` and `subCategoryId` (ObjectId refs) for correct relations
+// - Updates SKU generation prefix to use subcategory if present (better uniqueness)
+// - Keeps your image rules (1 main + max 4 gallery)
+
 const mongoose = require("mongoose");
 
 const productSchema = new mongoose.Schema(
@@ -10,51 +16,33 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ---------------- Core Info ----------------
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    name: { type: String, required: true, trim: true },
 
-    category: {
-      type: String,
-      required: true,
-      trim: true,
+    category: { type: String, required: true, trim: true, index: true },
+    subcategory: { type: String, trim: true, index: true },
+
+    
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+      index: true,
+    },
+    subCategoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
       index: true,
     },
 
-    sku: {
-      type: String,
-      unique: true,
-      sparse: true,
-      index: true,
-      trim: true,
-    },
+    sku: { type: String, unique: true, sparse: true, index: true, trim: true },
 
-    shortDescription: {
-      type: String,
-      maxlength: 150,
-      trim: true,
-    },
-
-    description: {
-      type: String,
-      trim: true,
-    },
+    shortDescription: { type: String, maxlength: 150, trim: true },
+    description: { type: String, trim: true },
 
     // ---------------- Pricing & Stock ----------------
-    price: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-
-    quantity: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
+    price: { type: Number, required: true, min: 0 },
+    quantity: { type: Number, default: 0, min: 0 },
 
     availability: {
       type: String,
@@ -79,20 +67,10 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ✅ Optional: to know it’s already forwarded to website
-    forwardedToWebsite: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-    forwardedAt: {
-      type: Date,
-    },
+    forwardedToWebsite: { type: Boolean, default: false, index: true },
+    forwardedAt: { type: Date },
 
-    deliveryTime: {
-      type: String,
-      trim: true,
-    },
+    deliveryTime: { type: String, trim: true },
 
     // ---------------- Attributes ----------------
     color: String,
@@ -102,14 +80,8 @@ const productSchema = new mongoose.Schema(
     location: String,
 
     // ---------------- Images ----------------
-    // ✅ main image
-    image: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    image: { type: String, required: true, trim: true },
 
-    // ✅ remaining images (max 4), total max 5 including main
     galleryImages: {
       type: [String],
       default: [],
@@ -126,14 +98,19 @@ const productSchema = new mongoose.Schema(
 
 /* --------------------------------------------------
    AUTO SKU GENERATION (ONLY IF NOT PROVIDED) + COLLISION SAFE
+   ✅ prefix uses subcategory if present else category
 -------------------------------------------------- */
 productSchema.pre("save", async function (next) {
   try {
     if (this.sku) return next();
 
-    const prefix = this.category
-      ? this.category.substring(0, 3).toUpperCase()
-      : "PRD";
+    const base =
+      (this.subcategory || this.category || "PRD")
+        .toString()
+        .trim()
+        .replace(/[^a-zA-Z0-9]/g, "");
+
+    const prefix = (base.substring(0, 3) || "PRD").toUpperCase();
 
     // Try a few times to avoid rare SKU collision
     for (let i = 0; i < 5; i++) {
@@ -156,9 +133,23 @@ productSchema.pre("save", async function (next) {
 });
 
 /* --------------------------------------------------
+   OPTIONAL: Guardrail — if subCategoryId exists, categoryId must exist
+-------------------------------------------------- */
+productSchema.pre("validate", function (next) {
+  if (this.subCategoryId && !this.categoryId) {
+    return next(new Error("categoryId is required when subCategoryId is provided"));
+  }
+  return next();
+});
+
+/* --------------------------------------------------
    INDEXES
 -------------------------------------------------- */
 productSchema.index({ manufacturer: 1, sku: 1 });
 productSchema.index({ status: 1, createdAt: -1 });
+
+// Helpful for catalogue filters
+productSchema.index({ category: 1, subcategory: 1, createdAt: -1 });
+productSchema.index({ categoryId: 1, subCategoryId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Product", productSchema);

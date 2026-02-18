@@ -1,27 +1,30 @@
 const jwt = require("jsonwebtoken");
-const Vendor = require("../models/Vendor");
+const Vendor = require("../models/Vendor"); // adjust path
 
 exports.protectVendor = async (req, res, next) => {
   try {
     const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.split(" ")[1] : null;
 
-    if (!auth.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "No token provided" });
-    }
-
-    const token = auth.split(" ")[1];
-    if (!token) return res.status(401).json({ message: "No token provided" });
+    if (!token) return res.status(401).json({ message: "No token" });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // decoded.id comes from signToken payload
-    const vendor = await Vendor.findById(decoded.id).select("-password");
-    if (!vendor) return res.status(401).json({ message: "User not found" });
+    // decoded should contain vendor id like decoded.id or decoded.vendorId
+    const vendorId = decoded.id || decoded.vendorId || decoded._id;
 
-    req.vendor = vendor;      // ✅ attach vendor
-    req.vendorId = vendor._id;
+    const vendor = await Vendor.findById(vendorId).select("_id email");
+    if (!vendor) return res.status(401).json({ message: "Vendor not found" });
+
+    // ✅ IMPORTANT: set req.user for controllers that expect req.user.id
+    req.user = { id: vendor._id };
+
+    // (optional) also set req.vendor for vendor-specific usage
+    req.vendor = vendor;
+
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid or expired token" });
+    console.error("protectVendor error:", err);
+    return res.status(401).json({ message: "Not authorized" });
   }
 };

@@ -1,4 +1,6 @@
-const Product = require("../models/Product");
+const Category = require("../../Admin/models/category.js");
+const mongoose = require("mongoose");
+const Product = require("../models/Product.js");
 
 const MAX_TOTAL_IMAGES = 5;
 
@@ -15,8 +17,6 @@ const countTotalImages = (image, galleryImagesArr) => {
   const galleryCount = Array.isArray(galleryImagesArr) ? galleryImagesArr.length : 0;
   return mainCount + galleryCount;
 };
-
-// Create Product
 exports.createProduct = async (req, res) => {
   try {
     if (req.user.role !== "manufacturer") {
@@ -25,9 +25,18 @@ exports.createProduct = async (req, res) => {
 
     const {
       name,
-      category,
+
+      // ✅ either provide IDs
+      categoryId,
+      subCategoryId,
+
+      // ✅ or provide slugs
+      category,     // parent slug preferred
+      subcategory,  // child slug optional
+
       sku,
       description,
+      shortDescription,
       price,
       quantity,
       availability,
@@ -38,41 +47,34 @@ exports.createProduct = async (req, res) => {
       location,
       image,
       galleryImages,
+      deliveryTime,
     } = req.body;
 
-    if (!name || !category || price === undefined) {
+    if (!name || price === undefined) {
       return res.status(400).json({
         success: false,
-        message: "Name, category, and price are required",
+        message: "Name and price are required",
       });
     }
 
     if (Number(price) <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Price must be greater than 0",
-      });
+      return res.status(400).json({ success: false, message: "Price must be greater than 0" });
     }
 
     if (quantity !== undefined && Number(quantity) < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Quantity cannot be negative",
-      });
+      return res.status(400).json({ success: false, message: "Quantity cannot be negative" });
     }
 
-    if (sku) {
-      const existingSku = await Product.findOne({ sku: sku.trim() });
+    const skuClean = (sku || "").trim();
+    if (skuClean) {
+      const existingSku = await Product.findOne({ sku: skuClean }).lean();
       if (existingSku) {
-        return res.status(409).json({
-          success: false,
-          message: "SKU already exists",
-        });
+        return res.status(409).json({ success: false, message: "SKU already exists" });
       }
     }
 
     const galleryArr = normalizeGallery(galleryImages);
-    const mainImage = image?.trim() || "";
+    const mainImage = (image || "").trim();
     const totalImages = countTotalImages(mainImage, galleryArr);
 
     if (totalImages > MAX_TOTAL_IMAGES) {
@@ -82,46 +84,137 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    const finalQuantity = quantity ? parseInt(quantity) : 0;
-    const finalAvailability =
-      availability || (finalQuantity > 0 ? "In Stock" : "Out of Stock");
+    const finalQuantity = quantity !== undefined ? parseInt(quantity, 10) : 0;
+    const finalAvailability = availability || (finalQuantity > 0 ? "In Stock" : "Out of Stock");
+
+    // =========================================================
+    // ✅ Resolve Category (parent) + SubCategory (child)
+    // Priority: IDs -> slugs -> fallback auto-fix if category is actually a child
+    // =========================================================
+
+    let parentCat = null;
+    let subCat = null;
+
+    // ✅ 1) If IDs are provided (BEST)
+    if (categoryId) {
+      parentCat = await Category.findById(categoryId).select("_id id slug name parentId").lean();
+      if (!parentCat) {
+        return res.status(400).json({ success: false, message: "Invalid categoryId" });
+      }
+      if (parentCat.parentId) {
+        return res.status(400).json({ success: false, message: "categoryId must be a parent category" });
+      }
+
+      if (subCategoryId) {
+        subCat = await Category.findOne({
+          _id: subCategoryId,
+          parentId: parentCat._id,
+        }).select("_id id slug name parentId").lean();
+
+        if (!subCat) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid subCategoryId for this parent category",
+          });
+        }
+      }
+    } else {
+      // ✅ 2) Else resolve by slugs
+      const catSlug = String(category || "").trim();
+      const subSlug = String(subcategory || "").trim();
+
+      if (!catSlug) {
+        return res.status(400).json({ success: false, message: "Category is required (slug or id)" });
+      }
+
+      // Try find category by slug
+      const catNode = await Category.findOne({ slug: catSlug })
+        .select("_id slug name parentId")
+        .lean();
+
+      if (!catNode) {
+        return res.status(400).json({ success: false, message: "Invalid category slug" });
+      }
+
+      // ✅ Auto-fix: if category slug is actually a CHILD, treat it as subCategory
+      if (catNode.parentId) {
+        parentCat = await Category.findById(catNode.parentId)
+          .select("_id slug name parentId")
+          .lean();
+        subCat = catNode;
+      } else {
+        parentCat = catNode;
+        if (subSlug) {
+          subCat = await Category.findOne({
+            slug: subSlug,
+            parentId: parentCat._id,
+          }).select("_id slug name parentId").lean();
+
+          if (!subCat) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid subcategory for this category",
+            });
+          }
+        }
+      }
+    }
+
+    // ✅ Final slugs that will be stored on Product
+    const finalCategorySlug = parentCat.slug;
+    const finalSubSlug = subCat?.slug || "";
 
     const product = await Product.create({
       manufacturer: req.user.id,
+
       name: name.trim(),
-      category: category.trim(),
-      sku: sku?.trim(),
+
+      // ✅ Always store parent slug in category
+      category: finalCategorySlug,
+      subcategory: finalSubSlug || undefined,
+
+      // ✅ Always store correct ids
+      categoryId: parentCat._id,
+      subCategoryId: subCat?._id || null,
+
+      sku: skuClean || undefined,
+
+      shortDescription: shortDescription?.trim(),
       description: description?.trim(),
+
       price: parseFloat(price),
       quantity: finalQuantity,
       availability: finalAvailability,
+
       color: color?.trim(),
       material: material?.trim(),
       size: size?.trim(),
       weight: weight?.trim(),
       location: location?.trim(),
+      deliveryTime: deliveryTime?.trim(),
+
       image: mainImage || "https://via.placeholder.com/300x300?text=No+Image",
       galleryImages: galleryArr,
     });
 
-    res.status(201).json({
-      success: true,
-      message: "Product created successfully",
-      product,
-    });
-  } catch (err) {
-    console.error("Create product error:", err);
-
-    if (err.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: "Duplicate key error",
-      });
+    // ✅ increment productCount
+    try {
+      if (subCat?._id) await Category.findByIdAndUpdate(subCat._id, { $inc: { productCount: 1 } });
+      else await Category.findByIdAndUpdate(parentCat._id, { $inc: { productCount: 1 } });
+    } catch (e) {
+      console.error("productCount increment failed:", e);
     }
 
-    res.status(500).json({ success: false, message: "Server error" });
+    return res.status(201).json({ success: true, message: "Product created successfully", product });
+  } catch (err) {
+    console.error("Create product error:", err);
+    if (err?.code === 11000) return res.status(409).json({ success: false, message: "Duplicate key error" });
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+
+
 
 // Get All Products
 exports.getAllProducts = async (req, res) => {

@@ -1,0 +1,63 @@
+// utils/coupons.js
+const normalizeCode = (code) =>
+  String(code || "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9_-]/g, "");
+
+const computeStatusByDates = (coupon) => {
+  const now = Date.now();
+
+  if (coupon.status === "disabled") return "disabled";
+
+  const start = new Date(coupon.startAt).getTime();
+  const end = new Date(coupon.endAt).getTime();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return coupon.status;
+
+  if (now < start) return "scheduled";
+  if (now > end) return "expired";
+
+  // if within window: keep draft if admin wants draft,
+  // but most teams want it active automatically.
+  // We'll respect admin: if draft -> draft, else active.
+  if (coupon.status === "draft") return "draft";
+
+  return "active";
+};
+
+const calcDiscount = ({ coupon, cartTotal, shipping = 0 }) => {
+  const total = Number(cartTotal || 0);
+  const ship = Number(shipping || 0);
+
+  let discount = 0;
+  let shippingDiscount = 0;
+
+  if (coupon.type === "free_shipping") {
+    shippingDiscount = ship; // full shipping off
+  } else if (coupon.type === "flat") {
+    discount = Math.max(0, Number(coupon.value || 0));
+  } else if (coupon.type === "percentage") {
+    const pct = Number(coupon.value || 0);
+    discount = (total * pct) / 100;
+    if (coupon.maxDiscount && Number(coupon.maxDiscount) > 0) {
+      discount = Math.min(discount, Number(coupon.maxDiscount));
+    }
+  }
+
+  // never exceed totals
+  discount = Math.min(discount, total);
+  shippingDiscount = Math.min(shippingDiscount, ship);
+
+  const finalAmount = Math.max(0, total - discount);
+  const finalShipping = Math.max(0, ship - shippingDiscount);
+
+  return {
+    discount: Math.round(discount),
+    shippingDiscount: Math.round(shippingDiscount),
+    finalAmount: Math.round(finalAmount),
+    finalShipping: Math.round(finalShipping),
+  };
+};
+
+module.exports = { normalizeCode, computeStatusByDates, calcDiscount };

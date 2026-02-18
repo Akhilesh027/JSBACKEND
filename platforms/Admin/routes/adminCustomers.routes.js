@@ -35,14 +35,7 @@ const MidrangeorderController = require("../controllers/midrangeOrdersController
 router.get("/api/admin/customers/all", getAllCustomers);
 router.get("/api/admin/customers/all-details", getAllCustomersFullDetails);
 
-// (optional endpoints you imported but not used yet)
-// router.get("/api/admin/customers/affordable", getAffordableCustomers);
-// router.get("/api/admin/customers/midrange", getMidrangeCustomers);
-// router.get("/api/admin/customers/luxury", getLuxuryCustomers);
 
-// --------------------
-// Manufacturers
-// --------------------
 router.get("/api/admin/manufacturers/all", getAllManufacturers);
 router.patch("/api/admin/manufacturers/:id/approve", approveManufacturer);
 router.patch("/api/admin/manufacturers/:id/reject", rejectManufacturer);
@@ -123,6 +116,88 @@ router.patch("/api/admin/cap/admins/:id/role", /*protect, isCapAdmin,*/ updateAd
 router.patch("/api/admin/cap/admins/:id/toggle", updateAdminActive);
 router.delete("/api/admin/cap/admins/:id", /*protect, isCapAdmin,*/ deleteAdmin);
 
+
+const {
+  getVendorOrdersAdmin,
+  approveVendorOrderAdmin,
+  rejectVendorOrderAdmin,
+  updateVendorOrderStatusAdmin,
+} = require("../controllers/adminVendorOrdersController");
+
+router.get("/api/admin/vendor-orders", getVendorOrdersAdmin);
+
+router.patch("/api/admin/vendor-orders/:orderId/approve", approveVendorOrderAdmin);
+
+router.patch("/api/admin/vendor-orders/:orderId/reject", rejectVendorOrderAdmin);
+router.patch("/api/admin/vendor-orders/:orderId/status", updateVendorOrderStatusAdmin);
+
+
+const Copupon = require("../controllers/adminCouponController");
+
+
+router.get("/api/admin/coupons", Copupon.listCoupons);
+router.post("/api/admin/coupons", Copupon.createCoupon);
+router.put("/api/admin/coupons/:id", Copupon.updateCoupon);
+router.patch("/api/admin/coupons/:id/disable", Copupon.disableCoupon);
+router.delete("/api/admin/coupons/:id", Copupon.deleteCoupon);
+
+
+const applyCtrl = require("../controllers/couponApplyController");
+const redeemCtrl = require("../controllers/couponRedeemController");
+
+// Customer checkout apply
+router.post("/api/:website/coupons/apply", applyCtrl.applyCoupon);
+
+// Call after order success
+router.post("/api/:website/coupons/redeem", redeemCtrl.redeemCoupon);
+
+
+
+
+
+
+const cat = require("../controllers/category.controller");
+
+
+
+router.get("/api/admin/categories", cat.listCategories);
+router.get("/api/admin/categories/export", cat.exportCSV);
+router.post("/api/admin/categories", cat.createCategory);
+router.get("/api/admin/categories/:id", cat.getCategory);
+router.put("/api/admin/categories/:id", cat.updateCategory);
+router.patch("/api/admin/categories/:id/toggle-disabled", cat.toggleDisabled);
+router.delete("/api/admin/categories/:id", cat.deleteCategory);
+const { getAllManufacturerReports } = require("../controllers/adminReportsController");
+
+router.get("/api/admin/reports/manufacturers", getAllManufacturerReports);
+
+const { getAllVendorReports } = require("../controllers/adminVendorReportsController");
+
+// ✅ /api/admin/reports/vendors?days=30
+router.get("/api/admin/reports/vendors", getAllVendorReports);
+
+
+const {
+  getSegmentOrders,
+  getAllOrders,
+} = require("../controllers/adminEcommerceReportsController");
+
+// ✅ Your existing URLs in frontend:
+router.get("/api/admin/:segment/orders", getSegmentOrders);
+
+// ✅ Optional single endpoint (faster)
+router.get("/api/admin/orders/all", getAllOrders);
+
+
+const { getReportsOverview } = require("../controllers/adminReportsOverviewController");
+
+// GET /api/admin/reports/overview?days=30&lowStock=10
+router.get("/api/admin/reports/overview", getReportsOverview);
+
+
+const { getCAPDashboard } = require("../controllers/capDashboard.js");
+
+router.get("/api/admin/cap/dashboard", getCAPDashboard);
 router.use("/api/admin/auth", loginAdmin);
 
 module.exports = router;

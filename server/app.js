@@ -51,6 +51,7 @@ app.use(
         // 4. Prevent your site from being put in an iframe (Clickjacking protection)
         "frame-ancestors": ["'none'"],
         
+      
         // 5. Disable old/dangerous plugins like Flash
         "object-src": ["'none'"],
         
