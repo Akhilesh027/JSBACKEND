@@ -16,7 +16,35 @@ app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: false, limit: "10kb" }));
 app.set('trust proxy', 1); // Only add this if you are behind a proxy (like Heroku/Cloudflare)
 
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://your-frontend-domain.com",
+  "http://localhost:8080",
+  "http://localhost:8081",
+  "http://localhost:8082",
+  "http://localhost:8084",
+  "http://localhost:8085",
+  "http://localhost:8086",
+  "http://localhost:8087",
+  "https://your-frontend.netlify.app",
+];
 
+app.use(
+  cors({
+    origin: function (origin, cb) {
+      // allow requests with no origin (like Postman)
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS: " + origin));
+    },
+    credentials: true, // ✅ important if you use cookies / sessions
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// ✅ must handle preflight
+app.options("*", cors());
 // for dev cors can access all origins 
 app.use(cors("*"));
 
