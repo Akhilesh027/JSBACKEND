@@ -29,6 +29,7 @@ router.get("/api/manufacturer/dashboard/:userId", dashboardController.getDetaile
 router.post("/api/products", authMiddleware, productController.createProduct);
 router.get("/api/products", authMiddleware, productController.getAllProducts);
 router.get("/api/products/:id", authMiddleware, productController.getProduct);
+router.patch("/api/products/:id/inventory", authMiddleware, productController.updateInventory);
 router.put("/api/products/:id", authMiddleware, productController.updateProduct);
 router.delete("/api/products/:id", authMiddleware, productController.deleteProduct);
 router.post(

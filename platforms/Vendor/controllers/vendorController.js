@@ -25,7 +25,6 @@ function signToken(vendor) {
   );
 }
 
-// ✅ REGISTER
 exports.registerVendor = async (req, res) => {
   try {
     const file = req.file;
@@ -158,7 +157,6 @@ exports.registerVendor = async (req, res) => {
   }
 };
 
-// ✅ LOGIN (Vendor)
 exports.loginVendor = async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -216,8 +214,6 @@ exports.getVendorMe = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
-
-// ✅ LIST (Admin use)
 exports.listVendors = async (req, res) => {
   try {
     const { status = "pending", page = 1, limit = 20 } = req.query;

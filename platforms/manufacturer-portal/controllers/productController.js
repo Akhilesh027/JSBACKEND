@@ -4,10 +4,12 @@ const Product = require("../models/Product.js");
 
 const MAX_TOTAL_IMAGES = 5;
 
+/** -----------------------------
+ * Helpers
+ * ---------------------------- */
 const normalizeGallery = (galleryImages) => {
   if (!galleryImages) return [];
   if (Array.isArray(galleryImages)) return galleryImages.filter(Boolean);
-  // if someone sends a single string accidentally:
   if (typeof galleryImages === "string") return [galleryImages].filter(Boolean);
   return [];
 };
@@ -17,6 +19,79 @@ const countTotalImages = (image, galleryImagesArr) => {
   const galleryCount = Array.isArray(galleryImagesArr) ? galleryImagesArr.length : 0;
   return mainCount + galleryCount;
 };
+
+// ✅ Availability should be derived from quantity (inventory-safe)
+const computeAvailability = (qty, low = 5) => {
+  const q = Number(qty || 0);
+  const l = Number(low || 5);
+  if (q <= 0) return "Out of Stock";
+  if (q <= l) return "Low Stock";
+  return "In Stock";
+};
+
+// ✅ Resolve categories same way in create + update
+async function resolveCategories({ categoryId, subCategoryId, category, subcategory }) {
+  let parentCat = null;
+  let subCat = null;
+
+  // 1) IDs preferred
+  if (categoryId) {
+    parentCat = await Category.findById(categoryId)
+      .select("_id slug name parentId")
+      .lean();
+
+    if (!parentCat) throw new Error("Invalid categoryId");
+    if (parentCat.parentId) throw new Error("categoryId must be a parent category");
+
+    if (subCategoryId) {
+      subCat = await Category.findOne({ _id: subCategoryId, parentId: parentCat._id })
+        .select("_id slug name parentId")
+        .lean();
+      if (!subCat) throw new Error("Invalid subCategoryId for this parent category");
+    }
+  } else {
+    // 2) Slugs
+    const catSlug = String(category || "").trim();
+    const subSlug = String(subcategory || "").trim();
+
+    if (!catSlug) throw new Error("Category is required (slug or id)");
+
+    const catNode = await Category.findOne({ slug: catSlug })
+      .select("_id slug name parentId")
+      .lean();
+
+    if (!catNode) throw new Error("Invalid category slug");
+
+    // Auto-fix: if passed child slug as category
+    if (catNode.parentId) {
+      parentCat = await Category.findById(catNode.parentId)
+        .select("_id slug name parentId")
+        .lean();
+      if (!parentCat) throw new Error("Invalid parent for category slug");
+      subCat = catNode;
+    } else {
+      parentCat = catNode;
+
+      if (subSlug) {
+        subCat = await Category.findOne({ slug: subSlug, parentId: parentCat._id })
+          .select("_id slug name parentId")
+          .lean();
+        if (!subCat) throw new Error("Invalid subcategory for this category");
+      }
+    }
+  }
+
+  return {
+    parentCat,
+    subCat,
+    finalCategorySlug: parentCat.slug,
+    finalSubSlug: subCat?.slug || "",
+  };
+}
+
+/** -----------------------------
+ * CREATE PRODUCT
+ * ---------------------------- */
 exports.createProduct = async (req, res) => {
   try {
     if (req.user.role !== "manufacturer") {
@@ -25,21 +100,16 @@ exports.createProduct = async (req, res) => {
 
     const {
       name,
-
-      // ✅ either provide IDs
       categoryId,
       subCategoryId,
-
-      // ✅ or provide slugs
-      category,     // parent slug preferred
-      subcategory,  // child slug optional
-
+      category,
+      subcategory,
       sku,
       description,
       shortDescription,
       price,
       quantity,
-      availability,
+      // availability (ignored intentionally)
       color,
       material,
       size,
@@ -48,13 +118,11 @@ exports.createProduct = async (req, res) => {
       image,
       galleryImages,
       deliveryTime,
+      lowStockThreshold,
     } = req.body;
 
     if (!name || price === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: "Name and price are required",
-      });
+      return res.status(400).json({ success: false, message: "Name and price are required" });
     }
 
     if (Number(price) <= 0) {
@@ -84,96 +152,33 @@ exports.createProduct = async (req, res) => {
       });
     }
 
+    // ✅ Inventory-safe fields
     const finalQuantity = quantity !== undefined ? parseInt(quantity, 10) : 0;
-    const finalAvailability = availability || (finalQuantity > 0 ? "In Stock" : "Out of Stock");
+    const finalLowStock = lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : 5;
+    const finalAvailability = computeAvailability(finalQuantity, finalLowStock);
 
-    // =========================================================
-    // ✅ Resolve Category (parent) + SubCategory (child)
-    // Priority: IDs -> slugs -> fallback auto-fix if category is actually a child
-    // =========================================================
-
-    let parentCat = null;
-    let subCat = null;
-
-    // ✅ 1) If IDs are provided (BEST)
-    if (categoryId) {
-      parentCat = await Category.findById(categoryId).select("_id id slug name parentId").lean();
-      if (!parentCat) {
-        return res.status(400).json({ success: false, message: "Invalid categoryId" });
-      }
-      if (parentCat.parentId) {
-        return res.status(400).json({ success: false, message: "categoryId must be a parent category" });
-      }
-
-      if (subCategoryId) {
-        subCat = await Category.findOne({
-          _id: subCategoryId,
-          parentId: parentCat._id,
-        }).select("_id id slug name parentId").lean();
-
-        if (!subCat) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid subCategoryId for this parent category",
-          });
-        }
-      }
-    } else {
-      // ✅ 2) Else resolve by slugs
-      const catSlug = String(category || "").trim();
-      const subSlug = String(subcategory || "").trim();
-
-      if (!catSlug) {
-        return res.status(400).json({ success: false, message: "Category is required (slug or id)" });
-      }
-
-      // Try find category by slug
-      const catNode = await Category.findOne({ slug: catSlug })
-        .select("_id slug name parentId")
-        .lean();
-
-      if (!catNode) {
-        return res.status(400).json({ success: false, message: "Invalid category slug" });
-      }
-
-      // ✅ Auto-fix: if category slug is actually a CHILD, treat it as subCategory
-      if (catNode.parentId) {
-        parentCat = await Category.findById(catNode.parentId)
-          .select("_id slug name parentId")
-          .lean();
-        subCat = catNode;
-      } else {
-        parentCat = catNode;
-        if (subSlug) {
-          subCat = await Category.findOne({
-            slug: subSlug,
-            parentId: parentCat._id,
-          }).select("_id slug name parentId").lean();
-
-          if (!subCat) {
-            return res.status(400).json({
-              success: false,
-              message: "Invalid subcategory for this category",
-            });
-          }
-        }
-      }
+    // ✅ Resolve category parent/sub properly
+    let parentCat, subCat, finalCategorySlug, finalSubSlug;
+    try {
+      const resolved = await resolveCategories({ categoryId, subCategoryId, category, subcategory });
+      parentCat = resolved.parentCat;
+      subCat = resolved.subCat;
+      finalCategorySlug = resolved.finalCategorySlug;
+      finalSubSlug = resolved.finalSubSlug;
+    } catch (e) {
+      return res.status(400).json({ success: false, message: e.message || "Category invalid" });
     }
 
-    // ✅ Final slugs that will be stored on Product
-    const finalCategorySlug = parentCat.slug;
-    const finalSubSlug = subCat?.slug || "";
-
     const product = await Product.create({
+      // ✅ manufacturer-wise ownership
       manufacturer: req.user.id,
 
       name: name.trim(),
 
-      // ✅ Always store parent slug in category
+      // ✅ store parent slug always
       category: finalCategorySlug,
       subcategory: finalSubSlug || undefined,
 
-      // ✅ Always store correct ids
       categoryId: parentCat._id,
       subCategoryId: subCat?._id || null,
 
@@ -183,7 +188,10 @@ exports.createProduct = async (req, res) => {
       description: description?.trim(),
 
       price: parseFloat(price),
+
+      // ✅ inventory
       quantity: finalQuantity,
+      lowStockThreshold: finalLowStock,
       availability: finalAvailability,
 
       color: color?.trim(),
@@ -197,7 +205,7 @@ exports.createProduct = async (req, res) => {
       galleryImages: galleryArr,
     });
 
-    // ✅ increment productCount
+    // productCount increment (safe)
     try {
       if (subCat?._id) await Category.findByIdAndUpdate(subCat._id, { $inc: { productCount: 1 } });
       else await Category.findByIdAndUpdate(parentCat._id, { $inc: { productCount: 1 } });
@@ -205,70 +213,83 @@ exports.createProduct = async (req, res) => {
       console.error("productCount increment failed:", e);
     }
 
-    return res.status(201).json({ success: true, message: "Product created successfully", product });
+    return res.status(201).json({
+      success: true,
+      message: "Product created successfully",
+      product,
+    });
   } catch (err) {
     console.error("Create product error:", err);
-    if (err?.code === 11000) return res.status(409).json({ success: false, message: "Duplicate key error" });
+    if (err?.code === 11000) {
+      return res.status(409).json({ success: false, message: "Duplicate key error" });
+    }
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-
-
-
-// Get All Products
+/** -----------------------------
+ * GET ALL PRODUCTS (manufacturer-wise)
+ * ---------------------------- */
 exports.getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find({ manufacturer: req.user.id }).sort({
-      createdAt: -1,
-    });
+    if (req.user.role !== "manufacturer") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
+    const products = await Product.find({ manufacturer: req.user.id }).sort({ createdAt: -1 });
     res.json({ success: true, products });
   } catch (err) {
     console.error("Get products error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch products",
-    });
+    res.status(500).json({ success: false, message: "Failed to fetch products" });
   }
 };
 
-// Get Single Product
+/** -----------------------------
+ * GET SINGLE PRODUCT (manufacturer-wise)
+ * ---------------------------- */
 exports.getProduct = async (req, res) => {
   try {
+    if (req.user.role !== "manufacturer") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     const product = await Product.findOne({
       _id: req.params.id,
       manufacturer: req.user.id,
     });
 
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found",
-      });
+      return res.status(404).json({ success: false, message: "Product not found" });
     }
 
     res.json({ success: true, product });
   } catch (err) {
     console.error("Get product error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// Update Product
+/** -----------------------------
+ * UPDATE PRODUCT (inventory-safe + category-safe)
+ * ---------------------------- */
 exports.updateProduct = async (req, res) => {
   try {
+    if (req.user.role !== "manufacturer") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     const {
       name,
+      categoryId,
+      subCategoryId,
       category,
+      subcategory,
       sku,
       description,
+      shortDescription,
       price,
       quantity,
-      availability,
+      // availability (ignored intentionally)
       color,
       material,
       size,
@@ -276,20 +297,16 @@ exports.updateProduct = async (req, res) => {
       location,
       image,
       galleryImages,
+      deliveryTime,
+      lowStockThreshold,
     } = req.body;
 
     if (price !== undefined && Number(price) <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Price must be greater than 0",
-      });
+      return res.status(400).json({ success: false, message: "Price must be greater than 0" });
     }
 
     if (quantity !== undefined && Number(quantity) < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Quantity cannot be negative",
-      });
+      return res.status(400).json({ success: false, message: "Quantity cannot be negative" });
     }
 
     if (sku) {
@@ -299,35 +316,26 @@ exports.updateProduct = async (req, res) => {
         _id: { $ne: req.params.id },
       });
       if (existingProduct) {
-        return res.status(409).json({
-          success: false,
-          message: "SKU already exists in your catalogue",
-        });
+        return res.status(409).json({ success: false, message: "SKU already exists in your catalogue" });
       }
     }
 
-    // Get existing product first (so we can validate total images properly)
+    // get existing first
     const existing = await Product.findOne({
       _id: req.params.id,
       manufacturer: req.user.id,
     });
 
     if (!existing) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found or access denied",
-      });
+      return res.status(404).json({ success: false, message: "Product not found or access denied" });
     }
 
-    // Determine what images will be after update
-    const nextMainImage =
-      image !== undefined ? String(image).trim() : existing.image;
-
+    // Validate images after update
+    const nextMainImage = image !== undefined ? String(image).trim() : existing.image;
     const nextGallery =
       galleryImages !== undefined ? normalizeGallery(galleryImages) : (existing.galleryImages || []);
 
     const totalImages = countTotalImages(nextMainImage, nextGallery);
-
     if (totalImages > MAX_TOTAL_IMAGES) {
       return res.status(400).json({
         success: false,
@@ -335,19 +343,68 @@ exports.updateProduct = async (req, res) => {
       });
     }
 
+    // ✅ Resolve categories if any category fields are provided, else keep existing
+    let finalCategorySlug = existing.category;
+    let finalSubSlug = existing.subcategory || "";
+    let finalCategoryId = existing.categoryId;
+    let finalSubId = existing.subCategoryId || null;
+
+    const categoryChangeRequested =
+      categoryId !== undefined ||
+      subCategoryId !== undefined ||
+      category !== undefined ||
+      subcategory !== undefined;
+
+    if (categoryChangeRequested) {
+      try {
+        const resolved = await resolveCategories({
+          categoryId: categoryId || existing.categoryId,
+          subCategoryId: subCategoryId || existing.subCategoryId,
+          category: category || existing.category,
+          subcategory: subcategory || existing.subcategory,
+        });
+
+        finalCategorySlug = resolved.finalCategorySlug;
+        finalSubSlug = resolved.finalSubSlug || "";
+        finalCategoryId = resolved.parentCat._id;
+        finalSubId = resolved.subCat?._id || null;
+      } catch (e) {
+        return res.status(400).json({ success: false, message: e.message || "Category invalid" });
+      }
+    }
+
+    // ✅ Inventory-safe recalculation
+    const nextQty = quantity !== undefined ? parseInt(quantity, 10) : existing.quantity;
+    const nextLowStock =
+      lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : (existing.lowStockThreshold || 5);
+
+    const nextAvailability = computeAvailability(nextQty, nextLowStock);
+
     const updateData = {
       ...(name !== undefined && { name: name.trim() }),
-      ...(category !== undefined && { category: category.trim() }),
-      ...(sku !== undefined && { sku: sku.trim() }),
-      ...(description !== undefined && { description: description.trim() }),
+      ...(sku !== undefined && { sku: sku.trim() || undefined }),
+      ...(shortDescription !== undefined && { shortDescription: shortDescription?.trim() }),
+      ...(description !== undefined && { description: description?.trim() }),
       ...(price !== undefined && { price: parseFloat(price) }),
-      ...(quantity !== undefined && { quantity: parseInt(quantity) }),
-      ...(availability !== undefined && { availability }),
-      ...(color !== undefined && { color: color.trim() }),
-      ...(material !== undefined && { material: material.trim() }),
-      ...(size !== undefined && { size: size.trim() }),
-      ...(weight !== undefined && { weight: weight.trim() }),
-      ...(location !== undefined && { location: location.trim() }),
+
+      // ✅ categories (kept consistent)
+      category: finalCategorySlug,
+      subcategory: finalSubSlug || undefined,
+      categoryId: finalCategoryId,
+      subCategoryId: finalSubId,
+
+      // ✅ inventory (always consistent)
+      quantity: nextQty,
+      lowStockThreshold: nextLowStock,
+      availability: nextAvailability,
+
+      ...(color !== undefined && { color: color?.trim() }),
+      ...(material !== undefined && { material: material?.trim() }),
+      ...(size !== undefined && { size: size?.trim() }),
+      ...(weight !== undefined && { weight: weight?.trim() }),
+      ...(location !== undefined && { location: location?.trim() }),
+      ...(deliveryTime !== undefined && { deliveryTime: deliveryTime?.trim() }),
+
       ...(image !== undefined && { image: nextMainImage }),
       ...(galleryImages !== undefined && { galleryImages: nextGallery }),
     };
@@ -358,68 +415,101 @@ exports.updateProduct = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    res.json({
-      success: true,
-      message: "Product updated successfully",
-      product,
-    });
+    res.json({ success: true, message: "Product updated successfully", product });
   } catch (err) {
     console.error("Update product error:", err);
-
     if (err.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: "SKU already exists",
-      });
+      return res.status(409).json({ success: false, message: "SKU already exists" });
     }
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to update product",
-    });
+    res.status(500).json({ success: false, message: "Failed to update product" });
   }
 };
 
-// Delete Product
+/** -----------------------------
+ * DELETE PRODUCT (manufacturer-wise)
+ * ---------------------------- */
 exports.deleteProduct = async (req, res) => {
   try {
+    if (req.user.role !== "manufacturer") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     const product = await Product.findOneAndDelete({
       _id: req.params.id,
       manufacturer: req.user.id,
     });
 
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found or access denied",
-      });
+      return res.status(404).json({ success: false, message: "Product not found or access denied" });
     }
 
-    res.json({
-      success: true,
-      message: "Product deleted successfully",
-    });
+    res.json({ success: true, message: "Product deleted successfully" });
   } catch (err) {
     console.error("Delete product error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete product",
-    });
+    res.status(500).json({ success: false, message: "Failed to delete product" });
   }
 };
 
+/** -----------------------------
+ * ✅ INVENTORY ONLY UPDATE (clean endpoint)
+ * PATCH /api/products/:id/inventory
+ * Body: { quantity, lowStockThreshold? }
+ * ---------------------------- */
+exports.updateInventory = async (req, res) => {
+  try {
+    if (req.user.role !== "manufacturer") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const { quantity, lowStockThreshold } = req.body;
+
+    if (quantity === undefined) {
+      return res.status(400).json({ success: false, message: "quantity is required" });
+    }
+
+    if (Number(quantity) < 0) {
+      return res.status(400).json({ success: false, message: "Quantity cannot be negative" });
+    }
+
+    const product = await Product.findOne({
+      _id: req.params.id,
+      manufacturer: req.user.id,
+    });
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found or access denied" });
+    }
+
+    const nextQty = parseInt(quantity, 10);
+    const nextLow =
+      lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : (product.lowStockThreshold || 5);
+
+    product.quantity = nextQty;
+    product.lowStockThreshold = nextLow;
+    product.availability = computeAvailability(nextQty, nextLow);
+
+    await product.save();
+
+    res.json({ success: true, message: "Inventory updated", product });
+  } catch (err) {
+    console.error("Inventory update error:", err);
+    res.status(500).json({ success: false, message: "Failed to update inventory" });
+  }
+};
+
+/** -----------------------------
+ * Uploads (unchanged)
+ * ---------------------------- */
 exports.uploadImage = async (req, res) => {
   try {
     if (!req.file) {
-      return res
-        .status(400)
-        .json({ success: false, message: "No file uploaded" });
+      return res.status(400).json({ success: false, message: "No file uploaded" });
     }
 
     return res.status(201).json({
       success: true,
-      url: req.file.path,        // Cloudinary secure_url
-      public_id: req.file.filename, // Cloudinary public_id
+      url: req.file.path,
+      public_id: req.file.filename,
     });
   } catch (err) {
     console.error("Upload error:", err);

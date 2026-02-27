@@ -22,11 +22,18 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8080",
   "http://localhost:8081",
   "http://localhost:8082",
+  "http://localhost:8083",
   "http://localhost:8084",
   "http://localhost:8085",
   "http://localhost:8086",
   "http://localhost:8087",
-  "https://your-frontend.netlify.app",
+  "https://manufactur-js.netlify.app",
+  "https://vendor12.netlify.app",
+  "https://affordable1.netlify.app",
+  "https://midrange23.netlify.app",
+  "https://jsadmin22.netlify.app",
+  "https://luxury23.netlify.app"
+
 ];
 
 app.use(
