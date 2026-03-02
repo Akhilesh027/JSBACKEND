@@ -1,3 +1,4 @@
+// models/luxury_orders.js
 const mongoose = require("mongoose");
 
 const LuxuryOrderSchema = new mongoose.Schema(
@@ -26,11 +27,24 @@ const LuxuryOrderSchema = new mongoose.Schema(
       },
     ],
 
+    // ✅ expanded pricing to match your controller fields
     pricing: {
       subtotal: { type: Number, required: true, min: 0 },
+      discount: { type: Number, default: 0, min: 0 },
+      shippingBase: { type: Number, default: 0, min: 0 },
+      shippingDiscount: { type: Number, default: 0, min: 0 },
       shipping: { type: Number, required: true, min: 0 },
       total: { type: Number, required: true, min: 0 },
       currency: { type: String, default: "INR" },
+
+      // ✅ store coupon snapshot inside pricing (your controller already does this)
+      coupon: {
+        couponId: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon" },
+        code: { type: String, default: "" },
+        type: { type: String, default: "" },
+        value: { type: Number, default: 0 },
+        maxDiscount: { type: Number, default: 0 },
+      },
     },
 
     shippingAddress: {
@@ -49,9 +63,10 @@ const LuxuryOrderSchema = new mongoose.Schema(
     },
 
     payment: {
+      // ✅ include razorpay
       method: {
         type: String,
-        enum: ["card", "upi", "netbanking", "cod"],
+        enum: ["card", "upi", "netbanking", "cod", "razorpay"],
         default: "cod",
       },
       status: {
@@ -59,9 +74,15 @@ const LuxuryOrderSchema = new mongoose.Schema(
         enum: ["pending", "paid", "unpaid", "failed", "refunded"],
         default: "pending",
       },
+
+      gateway: { type: String, default: "" }, // "razorpay"
       transactionId: { type: String, default: "" },
 
-      // ✅ extra info (optional)
+      // ✅ Razorpay fields (store proof)
+      razorpayOrderId: { type: String, default: "" },
+      razorpayPaymentId: { type: String, default: "" },
+      razorpaySignature: { type: String, default: "" },
+
       meta: {
         upiId: { type: String, default: "" },
         bank: { type: String, default: "" },
@@ -79,23 +100,20 @@ const LuxuryOrderSchema = new mongoose.Schema(
         "processing",
         "shipped",
         "delivered",
-        "cancelled",
         "returned",
       ],
       default: "placed",
       index: true,
     },
+
     website: { type: String, default: "luxury", index: true },
     orderNumber: { type: String, unique: true, index: true },
-
-    // optional: notes/admin fields
     notes: { type: String, default: "" },
   },
   { timestamps: true }
 );
 
-// ✅ auto calculate totals (safety)
-// This ensures lineTotal is correct even if client sends wrong value.
+// ✅ recalc line totals + pricing safety (but DO NOT overwrite discounts)
 LuxuryOrderSchema.pre("validate", function (next) {
   try {
     if (Array.isArray(this.items)) {
@@ -108,11 +126,18 @@ LuxuryOrderSchema.pre("validate", function (next) {
       });
 
       const subtotal = this.items.reduce((s, it) => s + (Number(it.lineTotal) || 0), 0);
-      const shipping = Number(this.pricing?.shipping ?? 0) || 0;
 
       this.pricing = this.pricing || {};
       this.pricing.subtotal = subtotal;
-      this.pricing.total = subtotal + shipping;
+
+      // keep shipping already computed by controller
+      const shipping = Number(this.pricing.shipping ?? 0) || 0;
+      const discount = Number(this.pricing.discount ?? 0) || 0;
+
+      // ✅ total = subtotal - discount + shipping (clamped)
+      const total = Math.max(0, subtotal - Math.max(0, discount) + Math.max(0, shipping));
+      this.pricing.total = total;
+
       if (!this.pricing.currency) this.pricing.currency = "INR";
     }
     next();
@@ -121,25 +146,21 @@ LuxuryOrderSchema.pre("validate", function (next) {
   }
 });
 
-// ✅ better unique order number
 LuxuryOrderSchema.pre("save", function (next) {
   if (!this.orderNumber) {
     const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
     this.orderNumber = `LUX-${Date.now()}-${rand}`;
   }
 
-  // ✅ align status with payment method (optional)
+  // ✅ align COD statuses
   if (this.payment?.method === "cod") {
     if (!this.payment.status || this.payment.status === "pending") this.payment.status = "unpaid";
     if (this.status === "pending_payment") this.status = "placed";
-  } else {
-    // non-cod default pending
-    if (!this.payment.status) this.payment.status = "pending";
-    // you can keep placed or pending_payment; your choice:
-    // if (!this.status) this.status = "pending_payment";
   }
 
   next();
 });
+
+LuxuryOrderSchema.index({ customerId: 1, website: 1, createdAt: -1 });
 
 module.exports = mongoose.model("luxury_orders", LuxuryOrderSchema, "luxury_orders");

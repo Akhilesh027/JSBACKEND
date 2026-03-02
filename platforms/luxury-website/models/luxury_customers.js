@@ -3,8 +3,8 @@ const bcrypt = require("bcryptjs");
 
 const CustomerSchema = new mongoose.Schema(
   {
-    firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, required: true, trim: true },
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
 
     email: {
       type: String,
@@ -16,7 +16,7 @@ const CustomerSchema = new mongoose.Schema(
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
     },
 
-    phone: { type: String, required: true, trim: true },
+    phone: { type: String, trim: true },
 
     password: { type: String, required: true, minlength: 8, select: false },
 

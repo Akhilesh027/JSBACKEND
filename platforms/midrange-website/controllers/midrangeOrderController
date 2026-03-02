@@ -1,44 +1,167 @@
+// controllers/midrangeOrderController.js
+// ✅ FULL UPDATED CODE (production-safe)
+// ✅ Supports COD + RAZORPAY
+// ✅ Server-side Razorpay signature verification
+// ✅ Prevents duplicate paid orders (idempotency) using razorpayPaymentId
+// ✅ Coupon usage + cart clear + customer stats ONLY when order finalized (COD or paid)
+// ✅ Validates payment fields and payment method
+// ✅ Uses session transaction properly and avoids partial updates
+
 const mongoose = require("mongoose");
+const crypto = require("crypto");
+
 const MidRangeCart = require("../models/MidRangeCart");
 const MidrangeAddress = require("../models/MidrangeAddress");
-const MidrangeOrder = require("../models/MidrangeOrder.js");
+const MidrangeOrder = require("../models/MidrangeOrder");
 const Product = require("../../manufacturer-portal/models/Product");
-const Coupon = require("../../Admin/models/Coupon.js");
-const CouponUsage = require("../../Admin/models/CouponUsage.js");
-// ✅ ADD: midrange customer model (update path/name if different)
-const MidrangeCustomer = require("../models/midrange_customers.js");
+const Coupon = require("../../Admin/models/Coupon");
+const CouponUsage = require("../../Admin/models/CouponUsage");
+const MidrangeCustomer = require("../models/midrange_customers");
 
 const WEBSITE = "mid_range";
 const ALLOWED_TIER = "mid_range";
 const ALLOWED_STATUS = "approved";
 const DISCOUNT_PERCENT = 10;
 
+// -----------------------------
+// Helpers
+// -----------------------------
 function computeDiscount(price) {
   const discountAmount = Math.round((Number(price || 0) * DISCOUNT_PERCENT) / 100);
   const finalPrice = Number(price || 0) - discountAmount;
   return { discountAmount, finalPrice };
 }
+
+function normalizeCode(code) {
+  return String(code || "").trim().toUpperCase();
+}
+
+// coupon status by date window
+function computeStatusByDates(couponDoc) {
+  const now = new Date();
+  const start = couponDoc?.startDate ? new Date(couponDoc.startDate) : null;
+  const end = couponDoc?.endDate ? new Date(couponDoc.endDate) : null;
+
+  if (start && now < start) return "scheduled";
+  if (end && now > end) return "expired";
+  return "active";
+}
+
+// calculates discount for percentage/flat/free_shipping
+function calcDiscount({ coupon, cartTotal, shipping }) {
+  const type = coupon.type;
+  const value = Number(coupon.value || 0);
+
+  let discount = 0;
+  let shippingDiscount = 0;
+
+  if (type === "percentage") {
+    discount = Math.round((cartTotal * value) / 100);
+    if (coupon.maxDiscount != null) discount = Math.min(discount, Number(coupon.maxDiscount));
+  } else if (type === "flat") {
+    discount = Math.min(value, cartTotal);
+  } else if (type === "free_shipping") {
+    // treat free_shipping as full shipping waived
+    shippingDiscount = Number(shipping || 0);
+  }
+
+  discount = Math.max(0, discount);
+  shippingDiscount = Math.max(0, shippingDiscount);
+
+  return { discount, shippingDiscount };
+}
+
+function verifyRazorpaySignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
+  if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) return false;
+
+  const secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!secret) throw new Error("RAZORPAY_KEY_SECRET missing on server");
+
+  const body = `${razorpayOrderId}|${razorpayPaymentId}`;
+  const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
+  return expected === razorpaySignature;
+}
+
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
+// -----------------------------
+// PLACE ORDER (COD + RAZORPAY)
+// -----------------------------
 exports.placeOrder = async (req, res) => {
   const session = await mongoose.startSession();
 
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
+
     const {
       addressId,
-      paymentMethod = "COD",
-      coupon, // ✅ { code, couponId } optional
-    } = req.body;
+      paymentMethod = "COD", // "COD" | "RAZORPAY"
+      coupon, // { code, couponId } optional
+      payment, // for razorpay: { razorpayOrderId, razorpayPaymentId, razorpaySignature }
+    } = req.body || {};
 
-    if (!mongoose.Types.ObjectId.isValid(addressId)) {
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    if (!isValidObjectId(addressId)) {
       return res.status(400).json({ message: "Invalid addressId" });
     }
 
-    const website = WEBSITE; // your constant
+    const pm = String(paymentMethod || "COD").toUpperCase();
+    if (!["COD", "RAZORPAY"].includes(pm)) {
+      return res.status(400).json({ message: "Invalid paymentMethod" });
+    }
+
+    const website = WEBSITE;
     const now = new Date();
 
     let createdOrder = null;
 
     await session.withTransaction(async () => {
+      // ✅ 0) If RAZORPAY, validate payment payload early
+      let payStatus = "pending";
+      let gateway = "";
+      let razorpayInfo = null;
+
+      if (pm === "RAZORPAY") {
+        gateway = "razorpay";
+        razorpayInfo = {
+          razorpayOrderId: payment?.razorpayOrderId,
+          razorpayPaymentId: payment?.razorpayPaymentId,
+          razorpaySignature: payment?.razorpaySignature,
+        };
+
+        if (
+          !razorpayInfo.razorpayOrderId ||
+          !razorpayInfo.razorpayPaymentId ||
+          !razorpayInfo.razorpaySignature
+        ) {
+          throw new Error("Razorpay payment details missing");
+        }
+
+        // ✅ Idempotency: prevent duplicate paid order for same razorpayPaymentId
+        const existing = await MidrangeOrder.findOne({
+          userId,
+          website,
+          "payment.razorpayPaymentId": razorpayInfo.razorpayPaymentId,
+          "payment.status": "paid",
+        })
+          .lean()
+          .session(session);
+
+        if (existing) {
+          // return existing as success (safe re-try)
+          createdOrder = existing;
+          return;
+        }
+
+        const ok = verifyRazorpaySignature(razorpayInfo);
+        if (!ok) throw new Error("Invalid Razorpay payment");
+
+        payStatus = "paid";
+      }
+
       // ✅ 1) Validate Address
       const address = await MidrangeAddress.findOne({
         _id: addressId,
@@ -48,18 +171,14 @@ exports.placeOrder = async (req, res) => {
         .lean()
         .session(session);
 
-      if (!address) {
-        throw new Error("Address not found");
-      }
+      if (!address) throw new Error("Address not found");
 
       // ✅ 2) Load Cart
       const cart = await MidRangeCart.findOne({ userId }).lean().session(session);
-      if (!cart || !cart.items || cart.items.length === 0) {
-        throw new Error("Cart is empty");
-      }
+      if (!cart?.items?.length) throw new Error("Cart is empty");
 
       // ✅ 3) Hydrate Allowed Products
-      const productIds = cart.items.map((i) => i.productId);
+      const productIds = cart.items.map((i) => i.productId).filter(Boolean);
       const products = await Product.find({
         _id: { $in: productIds },
         tier: ALLOWED_TIER,
@@ -80,8 +199,8 @@ exports.placeOrder = async (req, res) => {
 
         orderItems.push({
           productId: p._id,
-          name: p.name,
-          image: p.image,
+          name: p.name || "",
+          image: p.image || "",
           quantity: qty,
           price: Number(p.price || 0),
           discountPercent: DISCOUNT_PERCENT,
@@ -95,11 +214,7 @@ exports.placeOrder = async (req, res) => {
       }
 
       // ✅ 4) Base Totals (before coupon)
-      const subtotalBase = orderItems.reduce(
-        (s, x) => s + x.finalPrice * x.quantity,
-        0
-      );
-
+      const subtotalBase = orderItems.reduce((s, x) => s + x.finalPrice * x.quantity, 0);
       const shippingBase = subtotalBase > 10000 ? 0 : 499;
 
       // ✅ 5) Coupon Verification + Discount Calculation (server-truth)
@@ -112,49 +227,39 @@ exports.placeOrder = async (req, res) => {
       const couponCode = couponCodeRaw ? normalizeCode(couponCodeRaw) : "";
 
       if (couponCode) {
-        // IMPORTANT: apply coupon minOrder should be checked on subtotalBase (items total),
-        // NOT on finalTotal / not on shipping/tax.
         couponDoc = await Coupon.findOne({
           code: couponCode,
           website: { $in: [website, "all"] },
-        })
-          .session(session);
+        }).session(session);
 
-        if (!couponDoc) {
-          throw new Error("Coupon not found");
-        }
+        if (!couponDoc) throw new Error("Coupon not found");
 
-        // optional: if couponId sent, ensure it matches
         if (coupon?.couponId && String(couponDoc._id) !== String(coupon.couponId)) {
           throw new Error("Coupon mismatch");
         }
 
-        const computed = computeStatusByDates(couponDoc);
+        const computedStatus = computeStatusByDates(couponDoc);
 
         if (couponDoc.status === "disabled") throw new Error("Coupon is disabled.");
         if (couponDoc.status === "draft") throw new Error("Coupon is not active.");
-        if (computed === "expired") throw new Error("Coupon expired.");
-        if (computed === "scheduled") throw new Error("Coupon not started yet.");
+        if (computedStatus === "expired") throw new Error("Coupon expired.");
+        if (computedStatus === "scheduled") throw new Error("Coupon not started yet.");
 
-        // min order
         if (couponDoc.minOrder != null && subtotalBase < Number(couponDoc.minOrder)) {
           throw new Error(
             `Minimum order is ₹${Number(couponDoc.minOrder).toLocaleString("en-IN")}.`
           );
         }
 
-        // total usage limit
         if (couponDoc.totalLimit != null && couponDoc.usedCount >= Number(couponDoc.totalLimit)) {
           throw new Error("Coupon usage limit reached.");
         }
 
-        // per user limit
         if (couponDoc.perUserLimit != null) {
           const usage = await CouponUsage.findOne({
             couponId: couponDoc._id,
             userId,
-          })
-            .session(session);
+          }).session(session);
 
           const used = usage?.count || 0;
           if (used >= Number(couponDoc.perUserLimit)) {
@@ -162,7 +267,6 @@ exports.placeOrder = async (req, res) => {
           }
         }
 
-        // ✅ calc discount
         const breakdown = calcDiscount({
           coupon: couponDoc,
           cartTotal: subtotalBase,
@@ -185,23 +289,25 @@ exports.placeOrder = async (req, res) => {
       const subtotalAfterDiscount = Math.max(0, subtotalBase - couponDiscount);
       const shippingAfterDiscount = Math.max(0, shippingBase - shippingDiscount);
 
-      // tax on (subtotalAfterDiscount + shippingAfterDiscount)
       const tax = Math.round((subtotalAfterDiscount + shippingAfterDiscount) * 0.18);
       const total = subtotalAfterDiscount + shippingAfterDiscount + tax;
 
-      // ✅ Fix "min order ₹10" / "minimum payable" issue:
-      // Some payment gateways / business logic may require at least ₹10 payable.
       if (total < 10) {
         throw new Error("Minimum payable amount is ₹10. Please add more items.");
       }
 
-      // ✅ 7) Create Order
-      const order = await MidrangeOrder.create(
+      // ✅ 7) Finalize decision
+      // COD => finalize now, RAZORPAY => finalize only when signature valid (paid)
+      const shouldFinalize = pm === "COD" || payStatus === "paid";
+
+      // ✅ 8) Create Order
+      const orderDocs = await MidrangeOrder.create(
         [
           {
             userId,
             website,
             items: orderItems,
+
             addressSnapshot: {
               fullName: address.fullName,
               phone: address.phone,
@@ -212,6 +318,7 @@ exports.placeOrder = async (req, res) => {
               state: address.state,
               pincode: address.pincode,
             },
+
             totals: {
               subtotal: subtotalBase,
               discount: couponDiscount,
@@ -221,63 +328,58 @@ exports.placeOrder = async (req, res) => {
               tax,
               total,
             },
-            coupon: couponSnapshot, // ✅ store coupon snapshot on order (optional but recommended)
+
+            coupon: couponSnapshot || undefined,
+
             payment: {
-              method: paymentMethod,
-              status: "pending",
+              method: pm,
+              status: payStatus,
+              gateway,
+              ...(razorpayInfo || {}),
             },
-            status: "placed",
+
+            status: shouldFinalize ? "placed" : "pending_payment",
             createdAt: now,
           },
         ],
         { session }
       );
 
-      createdOrder = order[0];
+      createdOrder = orderDocs[0];
 
-      // ✅ 8) Redeem coupon in same transaction (increment counts)
-      if (couponDoc) {
-        await Coupon.updateOne(
-          { _id: couponDoc._id },
-          { $inc: { usedCount: 1 } },
+      // ✅ 9) Finalize (coupon redeem + clear cart + customer stats) only when paid/COD
+      if (shouldFinalize) {
+        if (couponDoc) {
+          await Coupon.updateOne({ _id: couponDoc._id }, { $inc: { usedCount: 1 } }, { session });
+
+          await CouponUsage.updateOne(
+            { couponId: couponDoc._id, userId },
+            { $inc: { count: 1 }, $setOnInsert: { couponId: couponDoc._id, userId } },
+            { upsert: true, session }
+          );
+        }
+
+        await MidRangeCart.updateOne({ userId }, { $set: { items: [] } }, { session });
+
+        await MidrangeCustomer.updateOne(
+          { _id: userId },
+          { $inc: { totalOrders: 1, lifetimeSpend: total }, $set: { lastOrderDate: now } },
           { session }
         );
-
-        await CouponUsage.updateOne(
-          { couponId: couponDoc._id, userId },
-          { $inc: { count: 1 }, $setOnInsert: { couponId: couponDoc._id, userId } },
-          { upsert: true, session }
-        );
       }
-
-      // ✅ 9) Clear Cart
-      await MidRangeCart.updateOne(
-        { userId },
-        { $set: { items: [] } },
-        { session }
-      );
-
-      // ✅ 10) Update Customer Stats
-      await MidrangeCustomer.updateOne(
-        { _id: userId },
-        {
-          $inc: { totalOrders: 1, lifetimeSpend: total },
-          $set: { lastOrderDate: now },
-        },
-        { session }
-      );
     });
 
     return res.json({ data: createdOrder, message: "Order placed successfully" });
   } catch (err) {
     const msg = err?.message || "Server error";
 
-    // match your earlier error styles
     if (msg === "Address not found") return res.status(404).json({ message: msg });
     if (msg === "Cart is empty") return res.status(400).json({ message: msg });
     if (msg.includes("Minimum order is ₹")) return res.status(400).json({ message: msg });
     if (msg.includes("Minimum payable amount is ₹10")) return res.status(400).json({ message: msg });
     if (msg.toLowerCase().includes("coupon")) return res.status(400).json({ message: msg });
+    if (msg.toLowerCase().includes("razorpay")) return res.status(400).json({ message: msg });
+    if (msg.toLowerCase().includes("unauthorized")) return res.status(401).json({ message: msg });
 
     return res.status(500).json({ message: msg });
   } finally {
@@ -285,11 +387,15 @@ exports.placeOrder = async (req, res) => {
   }
 };
 
-
+// -----------------------------
+// GET ORDER BY ID
+// -----------------------------
 exports.getOrderById = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
     const { id } = req.params;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid order id" });
@@ -309,9 +415,13 @@ exports.getOrderById = async (req, res) => {
   }
 };
 
+// -----------------------------
+// GET MY ORDERS
+// -----------------------------
 exports.getMyOrders = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
     const orders = await MidrangeOrder.find({
       userId,

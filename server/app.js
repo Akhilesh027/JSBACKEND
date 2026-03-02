@@ -1,24 +1,29 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const hpp = require("hpp");
+const xss = require("xss-clean");
+const cookieParser = require("cookie-parser");
 
 // Import Routes
 const AllRoutes = require("../routes/All.routes");
-const corsOptions = require("../config/cors");
-const helmet  = require("helmet");
-const hpp = require("hpp");
-const xss = require("xss-clean")
 
 const app = express();
 
-// Middleware
+// If behind proxy (nginx / cloudflare / heroku)
+app.set("trust proxy", 1);
+
+// Body parsers
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: false, limit: "10kb" }));
-app.set('trust proxy', 1); // Only add this if you are behind a proxy (like Heroku/Cloudflare)
 
+// Cookies (needed for res.cookie + reading cookies)
+app.use(cookieParser());
+
+// ✅ CORS Allowlist
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
-  "https://your-frontend-domain.com",
   "http://localhost:8080",
   "http://localhost:8081",
   "http://localhost:8082",
@@ -27,85 +32,75 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8085",
   "http://localhost:8086",
   "http://localhost:8087",
+
   "https://manufactur-js.netlify.app",
   "https://vendor12.netlify.app",
   "https://affordable1.netlify.app",
   "https://midrange23.netlify.app",
   "https://jsadmin22.netlify.app",
-  "https://luxury23.netlify.app"
+  "https://luxury23.netlify.app",
 
+  // replace with real one when you have it
+  "https://your-frontend-domain.com",
 ];
 
+// ✅ Single CORS middleware (credentials-friendly)
 app.use(
   cors({
     origin: function (origin, cb) {
-      // allow requests with no origin (like Postman)
+      // Allow requests with no origin (Postman, curl)
       if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+
+      if (ALLOWED_ORIGINS.includes(origin)) {
+        return cb(null, true);
+      }
+
       return cb(new Error("Not allowed by CORS: " + origin));
     },
-    credentials: true, // ✅ important if you use cookies / sessions
+    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// ✅ must handle preflight
-app.options("*", cors());
-// for dev cors can access all origins 
-app.use(cors("*"));
+// ✅ Preflight must include same config
+app.options("*", cors({
+  origin: function (origin, cb) {
+    if (!origin) return cb(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error("Not allowed by CORS: " + origin));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
-// for production need to use this 
-// app.use(cors(corsOptions))
+// Security headers (mostly useful if backend serves pages; safe for API too)
+app.disable("x-powered-by");
 
-
-app.disable("x-powered-by"); // Removes X-Powered-By header
-
-
-// 2. Data Sanitization against XSS
-// This will clean req.body, req.query, and req.params
-app.use(xss());
-
-// Helmet protects against: XSS ,Clickjacking ,MIME sniffing ,Insecure referrers , Legacy browser exploits
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        // 1. By default, only allow things from your own domain
-        "default-src": ["'self'"],
-        
-      
-        // 2. Allow inline styles (common in React/Vue/standard CSS)
-        // Otherwise, your CSS might not load at all
-        "style-src": ["'self'", "'unsafe-inline'"],
-        
-        // 3. Allow images from your own site and 'data:' URIs (common for small icons)
-        "img-src": ["'self'", "data:"],
-        
-
-        // 4. Prevent your site from being put in an iframe (Clickjacking protection)
-        "frame-ancestors": ["'none'"],
-        
-      
-        // 5. Disable old/dangerous plugins like Flash
-        "object-src": ["'none'"],
-        
-        // 6. Force everything to HTTPS
-        "upgrade-insecure-requests": [],
-      },
-    },
-    // Set this to false for now to avoid issues with basic images
-    crossOriginEmbedderPolicy: false, 
+    crossOriginEmbedderPolicy: false,
   })
 );
 
-app.use(hpp()); // Protects against parameter pollution
+app.use(xss());
+app.use(hpp());
 
 // Routes
 app.use("/", AllRoutes);
-
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
+
+  // CORS errors usually come here
+  if (String(err.message || "").startsWith("Not allowed by CORS")) {
+    return res.status(403).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
   res.status(500).json({
     success: false,
     message: "Something went wrong!",

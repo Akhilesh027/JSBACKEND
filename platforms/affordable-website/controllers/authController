@@ -14,55 +14,75 @@ const generateToken = (id, email, role) => {
 // Customer Signup
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    let { name, email, password } = req.body;
 
-    // Validation
+    name = (name || "").trim();
+    email = (email || "").toLowerCase().trim();
+    password = String(password || "");
+
+    // ✅ Validation
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide name, email, and password'
+        message: "Please provide name, email, and password",
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid email address",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 6 characters'
+        message: "Password must be at least 6 characters",
       });
     }
 
-    // Check if customer already exists
-    const existingCustomer = await Customer.findOne({ email: email.toLowerCase().trim() });
-    
+    // ✅ Check if customer already exists
+    const existingCustomer = await Customer.findOne({ email });
     if (existingCustomer) {
       return res.status(409).json({
         success: false,
-        message: 'Customer already exists with this email'
+        message: "Customer already exists with this email",
       });
     }
 
-    // Create customer
+    // ✅ Create customer
+    // NOTE:
+    // If your Customer schema already hashes password in pre("save"), then keep it as-is.
+    // If it does NOT hash automatically, you must hash here with bcrypt.
     const customer = await Customer.create({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      password,
-      platform: 'affordable',
-      role: 'customer',
+      name,
+      email,
+      password, // ✅ keep if schema hashes; else hash before saving
+      platform: "affordable",
+      role: "customer",
       isActive: true,
       isVerified: false,
-      lastLogin: new Date()
+      authProvider: "local", // ✅ helpful for google later
+      lastLogin: null,       // ✅ don't set login time on signup
     });
 
-    // Generate token
+    // ✅ Generate token
     const token = generateToken(customer._id, customer.email, customer.role);
 
-    // Remove password from response
-    const customerData = customer.toObject();
-    delete customerData.password;
+    // ✅ (Optional but recommended) also set cookie
+    const isProd = process.env.NODE_ENV === "production";
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     res.status(201).json({
       success: true,
-      message: 'Account created successfully!',
+      message: "Account created successfully!",
       token,
       customer: {
         id: customer._id,
@@ -71,38 +91,34 @@ exports.signup = async (req, res) => {
         role: customer.role,
         platform: customer.platform,
         isVerified: customer.isVerified,
-        createdAt: customer.createdAt
-      }
+        createdAt: customer.createdAt,
+      },
     });
-
   } catch (error) {
-    console.error('Signup error:', error);
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
+    console.error("Signup error:", error);
+
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({
         success: false,
-        message: 'Validation error',
-        errors: messages
+        message: "Validation error",
+        errors: messages,
       });
     }
-    
-    // Handle duplicate key errors
+
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: 'Email already registered'
+        message: "Email already registered",
       });
     }
-    
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: "Internal server error",
     });
   }
 };
-
 // Customer Login
 exports.login = async (req, res) => {
   try {

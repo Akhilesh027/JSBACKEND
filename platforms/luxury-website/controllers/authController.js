@@ -9,13 +9,18 @@ if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
 }
 
 // Generate JWT Token for luxury
-const generateToken = (id, email, vipTier) => {
+function generateToken(payload) {
   return jwt.sign(
-    { id, email, platform: "luxury", vipTier, type: "customer" },
-    JWT_SECRET,
-    { expiresIn: "30d" }
+    {
+      id: payload.id,
+      email: payload.email,
+      website: payload.website, // ✅ important
+      vipTier: payload.vipTier,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
   );
-};
+}
 
 const normalizeEmail = (email) => String(email || "").toLowerCase().trim();
 const normalizePhone = (phone) => String(phone || "").trim();
@@ -71,6 +76,7 @@ exports.signup = async (req, res) => {
       preferences,
     } = req.body;
 
+    // ✅ Required fields
     if (!firstName || !lastName || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
@@ -79,26 +85,46 @@ exports.signup = async (req, res) => {
       });
     }
 
+    // ✅ Password strength
     const pwErr = validatePasswordStrength(password);
     if (pwErr) {
       return res.status(400).json({ success: false, message: pwErr });
     }
 
+    // ✅ Normalize
     const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = normalizePhone(phone);
 
-    const existingEmail = await Customer.findOne({ email: normalizedEmail });
+    // ✅ Optional: basic format checks (if your normalize funcs don't validate)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: "Invalid email address." });
+    }
+    if (String(normalizedPhone).length < 8) {
+      return res.status(400).json({ success: false, message: "Invalid phone number." });
+    }
+
+    // ✅ Check duplicates (faster + clearer errors)
+    const [existingEmail, existingPhone] = await Promise.all([
+      Customer.findOne({ email: normalizedEmail }).lean(),
+      Customer.findOne({ phone: normalizedPhone }).lean(),
+    ]);
+
     if (existingEmail) {
-      return res.status(409).json({ success: false, message: "Email already registered." });
+      return res.status(409).json({
+        success: false,
+        message: "Email already registered.",
+      });
     }
 
-    const existingPhone = await Customer.findOne({ phone: normalizedPhone });
     if (existingPhone) {
-      return res.status(409).json({ success: false, message: "Phone already registered." });
+      return res.status(409).json({
+        success: false,
+        message: "Phone already registered.",
+      });
     }
 
-    // ✅ IMPORTANT: store RAW password here.
-    // Model pre('save') will hash it once.
+    // ✅ Create customer (RAW password here; schema pre-save will hash)
     const customer = await Customer.create({
       firstName: String(firstName).trim(),
       lastName: String(lastName).trim(),
@@ -115,10 +141,10 @@ exports.signup = async (req, res) => {
       isActive: true,
       isVerified: false,
 
-      preferences: preferences || {
-        newsletter: true,
-        exclusiveInvites: true,
-        conciergeAlerts: true,
+      preferences: {
+        newsletter: preferences?.newsletter ?? true,
+        exclusiveInvites: preferences?.exclusiveInvites ?? true,
+        conciergeAlerts: preferences?.conciergeAlerts ?? true,
       },
 
       dataConsent: {
@@ -131,30 +157,60 @@ exports.signup = async (req, res) => {
       lastLogin: new Date(),
     });
 
-    const token = generateToken(customer._id, customer.email, customer.vipTier);
+    // ✅ IMPORTANT: include website/platform in token payload
+    // This helps frontend decide which cart route to hit (affordable/mid/luxury)
+    // If your generateToken currently doesn't accept website, update it accordingly.
+    const token = generateToken({
+      id: customer._id,
+      email: customer.email,
+      website: "luxury",
+      vipTier: customer.vipTier,
+    });
+
+    const nameForMsg =
+      customer.fullName ||
+      `${customer.firstName || ""} ${customer.lastName || ""}`.trim() ||
+      "there";
 
     return res.status(201).json({
       success: true,
-      message: `Welcome ${customer.fullName}! Your luxury account has been created.`,
+      message: `Welcome ${nameForMsg}! Your luxury account has been created.`,
       token,
       customer: safeCustomerPayload(customer),
     });
   } catch (error) {
     console.error("Luxury signup error:", error);
 
-    // ✅ handle mongoose duplicate key error too
+    // ✅ Duplicate key error (Mongo)
     if (error?.code === 11000) {
-      const field = Object.keys(error.keyPattern || {})[0] || "field";
-      return res.status(409).json({
+      const dupField =
+        Object.keys(error.keyPattern || {})[0] ||
+        Object.keys(error.keyValue || {})[0] ||
+        "field";
+
+      const pretty =
+        dupField === "email"
+          ? "Email already registered."
+          : dupField === "phone"
+          ? "Phone already registered."
+          : `${dupField} already exists`;
+
+      return res.status(409).json({ success: false, message: pretty });
+    }
+
+    // ✅ Mongoose validation error
+    if (error?.name === "ValidationError") {
+      const errors = Object.values(error.errors || {}).map((e) => e.message);
+      return res.status(400).json({
         success: false,
-        message: `${field} already exists`,
+        message: "Validation error",
+        errors,
       });
     }
 
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
-
 // ✅ Luxury Customer Login
 exports.login = async (req, res) => {
   try {

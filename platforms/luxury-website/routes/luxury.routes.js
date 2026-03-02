@@ -38,7 +38,6 @@ router.get('/api/luxury/exclusive-collections', luxuryAuthMiddleware, platinumMi
   });
 });
 
-
 // ✅ Public (or keep protected if you want)
 router.get("/api/luxury/products", getApprovedLuxuryProducts);
 router.get("/api/luxury/products/:id", getApprovedLuxuryProductById);

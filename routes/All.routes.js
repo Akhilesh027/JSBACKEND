@@ -10,6 +10,7 @@ const adminRoutes = require('../platforms/Admin/routes/adminCustomers.routes');
 const VendorRoutes = require('../platforms/Vendor/routes/vendorRoutes');
 // ip rate limit need to add middleware for all routes after completion  
 const { vendorLimiter, ecommerceLimiter, adminLimiter  } = require("../shared/middleware/rateLimiter");
+const { default: googleAuth } = require("../platforms/Auth/google");
 
 
 
@@ -19,5 +20,8 @@ router.use('/', midrangeRoutes);
 router.use('/', luxuryRoutes);
 router.use('/', adminRoutes);
 router.use('/', VendorRoutes);
+router.post("/api/auth/google", googleAuth);
+router.use("/api/payments", require("../routes/Payment"));
+
 
 module.exports = router;

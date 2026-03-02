@@ -5,7 +5,6 @@ const CustomerSchema = new mongoose.Schema({
   // Basic Information
   fullName: {
     type: String,
-    required: [true, 'Full name is required'],
     trim: true
   },
   email: {
