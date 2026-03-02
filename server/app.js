@@ -39,11 +39,8 @@ const ALLOWED_ORIGINS = [
   "https://signaturespaces.jsgallor.com",
   "https://admin.jsgallor.com",
   "https://celestialiving.jsgallor.com",
-
-  
 ];
 
-// ✅ Single CORS middleware (credentials-friendly)
 app.use(
   cors({
     origin: function (origin, cb) {
