@@ -35,6 +35,7 @@ const ALLOWED_ORIGINS = [
 
   "https://jsgallormanufacture.jsgallor.com",
   "https://vendor.jsgallor.com",
+  "https://www.jsgallor.com",
   "https://essentialstudio.jsgallor.com",
   "https://signaturespaces.jsgallor.com",
   "https://admin.jsgallor.com",
