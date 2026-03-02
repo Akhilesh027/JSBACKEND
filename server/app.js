@@ -33,15 +33,14 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8086",
   "http://localhost:8087",
 
-  "https://manufactur-js.netlify.app",
-  "https://vendor12.netlify.app",
-  "https://affordable1.netlify.app",
-  "https://midrange23.netlify.app",
-  "https://jsadmin22.netlify.app",
-  "https://luxury23.netlify.app",
+  "http://manufacture.jsgallor.com",
+  "http://vendor.jsgallor.com",
+  "http://essentialstudio.jsgallor.com",
+  "http://signaturespaces.jsgallor.com",
+  "http://admin.jsgallor.com",
+  "http://celestialiving.jsgallor.com",
 
-  // replace with real one when you have it
-  "https://your-frontend-domain.com",
+  
 ];
 
 // ✅ Single CORS middleware (credentials-friendly)

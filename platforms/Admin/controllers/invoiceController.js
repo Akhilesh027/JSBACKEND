@@ -146,8 +146,6 @@ function buildInvoiceHTML({ order, business }) {
     phone: "+91-XXXXXXXXXX",
     gst: "",
     logoUrl: "",
-    // ✅ NEW: used to make product image URLs absolute (recommended)
-    // example: "https://jsgallor.com" OR "https://cdn.jsgallor.com"
     publicBaseUrl: "",
   };
 
