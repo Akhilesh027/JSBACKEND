@@ -33,7 +33,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8086",
   "http://localhost:8087",
 
-  "https://manufacture.jsgallor.com",
+  "https://jsgallormanufacture.jsgallor.com",
   "https://vendor.jsgallor.com",
   "https://essentialstudio.jsgallor.com",
   "https://signaturespaces.jsgallor.com",
