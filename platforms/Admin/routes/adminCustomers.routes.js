@@ -203,4 +203,25 @@ router.use("/api/admin/auth", loginAdmin);
 router.post("/api/admin/:website/orders/:id/invoice/email", emailInvoice);
 router.get("/api/admin/:website/orders/:id/invoice/pdf", downloadInvoicePdf);
 
+
+
+
+const {
+  getLegalPages,
+  getLegalPageById,
+  getLegalPageBySlug,
+  createLegalPage,
+  updateLegalPage,
+  deleteLegalPage,
+} = require("../controllers/legalPageController.js");
+
+// Admin routes
+router.get("/api/admin/legal-pages", getLegalPages);
+router.get("/api/admin/legal-pages/:id", getLegalPageById);
+router.post("/api/admin/legal-pages", createLegalPage);
+router.put("/api/admin/legal-pages/:id", updateLegalPage);
+router.delete("/api/admin/legal-pages/:id", deleteLegalPage);
+
+// Public route by slug
+router.get("/api/public/legal-pages/by-slug", getLegalPageBySlug);
 module.exports = router;
