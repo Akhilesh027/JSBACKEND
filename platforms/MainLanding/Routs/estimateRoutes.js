@@ -9,6 +9,7 @@ const {
   updateStep4Submit,
   getEstimateById,
   getAllEstimates,
+  updateEstimate,
 } = require("../Controller/estimateController.js");
 
 const { upload } = require("../middleware/upload");
@@ -28,5 +29,6 @@ router.patch(
 
 router.patch("/:id/step4", updateStep4Submit);
 router.get("/:id", getEstimateById);
+router.patch("/amount/:id", updateEstimate);
 
 module.exports = router;

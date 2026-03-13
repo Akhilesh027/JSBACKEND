@@ -8,16 +8,16 @@ if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is not set in production");
 }
 
-// Generate JWT Token for luxury
+// Generate JWT Token for luxury – expects an object with id, email, platform, vipTier
 function generateToken(payload) {
   return jwt.sign(
     {
       id: payload.id,
       email: payload.email,
-      website: payload.website, // ✅ important
+      platform: payload.platform, // ✅ changed from 'website' to 'platform'
       vipTier: payload.vipTier,
     },
-    process.env.JWT_SECRET,
+    JWT_SECRET,
     { expiresIn: "7d" }
   );
 }
@@ -39,6 +39,7 @@ const validatePasswordStrength = (password) => {
   return null;
 };
 
+// ✅ Safe customer payload – ensures id is always present (mapped from _id)
 const safeCustomerPayload = (customer) => ({
   id: customer._id,
   vipId: customer.vipId,
@@ -51,7 +52,7 @@ const safeCustomerPayload = (customer) => ({
   designation: customer.designation,
   platform: customer.platform,
   vipTier: customer.vipTier,
-  vipBadge: customer.vipBadge, // virtual
+  vipBadge: customer.vipBadge,
   isVip: customer.isVip,
   isVerified: customer.isVerified,
   isActive: customer.isActive,
@@ -76,7 +77,6 @@ exports.signup = async (req, res) => {
       preferences,
     } = req.body;
 
-    // ✅ Required fields
     if (!firstName || !lastName || !email || !phone || !password) {
       return res.status(400).json({
         success: false,
@@ -85,17 +85,14 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // ✅ Password strength
     const pwErr = validatePasswordStrength(password);
     if (pwErr) {
       return res.status(400).json({ success: false, message: pwErr });
     }
 
-    // ✅ Normalize
     const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = normalizePhone(phone);
 
-    // ✅ Optional: basic format checks (if your normalize funcs don't validate)
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({ success: false, message: "Invalid email address." });
@@ -104,7 +101,6 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid phone number." });
     }
 
-    // ✅ Check duplicates (faster + clearer errors)
     const [existingEmail, existingPhone] = await Promise.all([
       Customer.findOne({ email: normalizedEmail }).lean(),
       Customer.findOne({ phone: normalizedPhone }).lean(),
@@ -124,46 +120,37 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // ✅ Create customer (RAW password here; schema pre-save will hash)
     const customer = await Customer.create({
       firstName: String(firstName).trim(),
       lastName: String(lastName).trim(),
       email: normalizedEmail,
       phone: normalizedPhone,
       password,
-
       company: company ? String(company).trim() : undefined,
       designation: designation ? String(designation).trim() : undefined,
-
       platform: "luxury",
       vipTier: "standard",
       isVip: false,
       isActive: true,
       isVerified: false,
-
       preferences: {
         newsletter: preferences?.newsletter ?? true,
         exclusiveInvites: preferences?.exclusiveInvites ?? true,
         conciergeAlerts: preferences?.conciergeAlerts ?? true,
       },
-
       dataConsent: {
         termsAccepted: true,
         termsAcceptedAt: new Date(),
         marketingConsent: true,
         privacyConsent: true,
       },
-
       lastLogin: new Date(),
     });
 
-    // ✅ IMPORTANT: include website/platform in token payload
-    // This helps frontend decide which cart route to hit (affordable/mid/luxury)
-    // If your generateToken currently doesn't accept website, update it accordingly.
     const token = generateToken({
       id: customer._id,
       email: customer.email,
-      website: "luxury",
+      platform: customer.platform, // ✅ use platform
       vipTier: customer.vipTier,
     });
 
@@ -180,25 +167,19 @@ exports.signup = async (req, res) => {
     });
   } catch (error) {
     console.error("Luxury signup error:", error);
-
-    // ✅ Duplicate key error (Mongo)
     if (error?.code === 11000) {
       const dupField =
         Object.keys(error.keyPattern || {})[0] ||
         Object.keys(error.keyValue || {})[0] ||
         "field";
-
       const pretty =
         dupField === "email"
           ? "Email already registered."
           : dupField === "phone"
           ? "Phone already registered."
           : `${dupField} already exists`;
-
       return res.status(409).json({ success: false, message: pretty });
     }
-
-    // ✅ Mongoose validation error
     if (error?.name === "ValidationError") {
       const errors = Object.values(error.errors || {}).map((e) => e.message);
       return res.status(400).json({
@@ -207,10 +188,10 @@ exports.signup = async (req, res) => {
         errors,
       });
     }
-
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 // ✅ Luxury Customer Login
 exports.login = async (req, res) => {
   try {
@@ -222,7 +203,6 @@ exports.login = async (req, res) => {
 
     const normalizedEmail = normalizeEmail(email);
 
-    // password is select:false, so we must select it for comparison
     const customer = await Customer.findOne({ email: normalizedEmail }).select("+password");
 
     if (!customer) {
@@ -233,7 +213,6 @@ exports.login = async (req, res) => {
       return res.status(403).json({ success: false, message: "Account is deactivated" });
     }
 
-    // ✅ Compare password (works because we selected +password)
     const isMatch = await customer.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
@@ -242,9 +221,13 @@ exports.login = async (req, res) => {
     customer.lastLogin = new Date();
     await customer.save();
 
-    const token = generateToken(customer._id, customer.email, customer.vipTier);
+    const token = generateToken({
+      id: customer._id,
+      email: customer.email,
+      platform: customer.platform, // ✅ use platform
+      vipTier: customer.vipTier,
+    });
 
-    // ✅ remove password from response object
     customer.password = undefined;
 
     return res.status(200).json({
@@ -272,22 +255,22 @@ exports.logout = async (req, res) => {
   }
 };
 
-// ✅ Get Profile
+// ✅ Get Profile – now uses safeCustomerPayload
 exports.getProfile = async (req, res) => {
   try {
     if (!req.user?.id) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const customer = await Customer.findById(req.user.id)
-      
+    const customer = await Customer.findById(req.user.id);
+
     if (!customer) {
       return res.status(404).json({ success: false, message: "Customer not found" });
     }
 
     return res.status(200).json({
       success: true,
-      customer,
+      customer: safeCustomerPayload(customer),
       conciergeAvailable: !!customer.assignedConcierge,
     });
   } catch (error) {
@@ -296,7 +279,7 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// ✅ Update Profile (merge safely + phone duplicate check)
+// ✅ Update Profile – now uses safeCustomerPayload in response
 exports.updateProfile = async (req, res) => {
   try {
     if (!req.user?.id) {
@@ -324,7 +307,6 @@ exports.updateProfile = async (req, res) => {
     if (company !== undefined) customer.company = company ? String(company).trim() : "";
     if (designation !== undefined) customer.designation = designation ? String(designation).trim() : "";
 
-    // ✅ merge address without wiping
     if (address) {
       const current = customer.address || {};
       customer.address = {
@@ -337,8 +319,6 @@ exports.updateProfile = async (req, res) => {
           ...(address.secondary || {}),
         },
       };
-
-      // trim strings
       const trimObj = (obj) => {
         const out = { ...obj };
         Object.keys(out).forEach((k) => {
@@ -350,7 +330,6 @@ exports.updateProfile = async (req, res) => {
       customer.address.secondary = trimObj(customer.address.secondary);
     }
 
-    // ✅ merge preferences safely
     if (preferences) {
       const currentPrefs = customer.preferences || {};
       customer.preferences = {
@@ -370,16 +349,14 @@ exports.updateProfile = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Profile updated successfully",
-      customer,
+      customer: safeCustomerPayload(customer),
     });
   } catch (error) {
     console.error("Update profile error:", error);
-
     if (error.name === "ValidationError") {
       const messages = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({ success: false, message: "Validation error", errors: messages });
     }
-
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
@@ -410,7 +387,6 @@ exports.upgradeVipTier = async (req, res) => {
 
     customer.vipTier = vipTier;
     customer.isVip = true;
-
     if (notes) customer.conciergeNotes = notes;
 
     customer.vipBenefits = {
@@ -424,8 +400,12 @@ exports.upgradeVipTier = async (req, res) => {
 
     await customer.save();
 
-    // ✅ token should update because vipTier is inside JWT
-    const token = generateToken(customer._id, customer.email, customer.vipTier);
+    const token = generateToken({
+      id: customer._id,
+      email: customer.email,
+      platform: customer.platform, // ✅ use platform
+      vipTier: customer.vipTier,
+    });
 
     return res.status(200).json({
       success: true,

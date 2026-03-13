@@ -86,14 +86,13 @@ router.get("/api/admin/midrange/orders", MidrangeorderController.getMidrangeOrde
 router.patch("/api/admin/midrange/orders/:id/approve", MidrangeorderController.approveMidrangeOrder);
 router.patch("/api/admin/midrange/orders/:id/reject", MidrangeorderController.rejectMidrangeOrder);
 router.patch("/api/admin/midrange/orders/:id/status", MidrangeorderController.updateOrderStatus);
-
+router.get("/api/admin/midrange/orders/:id", MidrangeorderController.getMidrangeOrderById);
 // --------------------
 // ✅ Website Orders - Luxury (optional later)
 // --------------------
  const LuxuryorderController = require("../controllers/adminLuxury.controller");
  router.get("/api/admin/luxury/orders", LuxuryorderController.getLuxuryOrdersAdmin);
- router.patch("/api/admin/luxury/orders/:id/approve", LuxuryorderController.confirmLuxuryOrder);
- router.patch("/api/admin/luxury/orders/:id/reject", LuxuryorderController.cancelLuxuryOrderAdmin);
+ router.patch("/api/admin/luxury/orders/:id/approve", LuxuryorderController.approveLuxuryOrder);
  router.patch("/api/admin/luxury/orders/:id/status", LuxuryorderController.updateLuxuryOrderStatus);
 
 router.get("/api/admin/orders/all", AllOrdersController.getAllOrders);
@@ -151,14 +150,7 @@ router.post("/api/:website/coupons/apply", applyCtrl.applyCoupon);
 // Call after order success
 router.post("/api/:website/coupons/redeem", redeemCtrl.redeemCoupon);
 
-
-
-
-
-
 const cat = require("../controllers/category.controller");
-
-
 
 router.get("/api/admin/categories", cat.listCategories);
 router.get("/api/admin/categories/export", cat.exportCSV);
@@ -221,7 +213,27 @@ router.get("/api/admin/legal-pages/:id", getLegalPageById);
 router.post("/api/admin/legal-pages", createLegalPage);
 router.put("/api/admin/legal-pages/:id", updateLegalPage);
 router.delete("/api/admin/legal-pages/:id", deleteLegalPage);
-
-// Public route by slug
 router.get("/api/public/legal-pages/by-slug", getLegalPageBySlug);
+
+
+
+const {
+  getShippingCosts,
+  createShippingCost,
+  updateShippingCost,
+  deleteShippingCost,
+  getShippingCostByLocation,
+} = require("../controllers/shippingCostController");
+
+// add your auth middleware here if you already have one
+// const { protectAdmin } = require("../middleware/auth");
+
+// ADMIN
+router.get("/api/admin/shipping-costs", getShippingCosts);
+router.post("/api/admin/shipping-costs", createShippingCost);
+router.put("/api/admin/shipping-costs/:id", updateShippingCost);
+router.delete("/api/admin/shipping-costs/:id", deleteShippingCost);
+
+// USER
+router.get("/api/shipping-costs/by-location", getShippingCostByLocation);
 module.exports = router;

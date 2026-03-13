@@ -29,6 +29,18 @@ const computeAvailability = (qty, low = 5) => {
   return "In Stock";
 };
 
+// ✅ Normalise size and color fields (handle string, array, comma-separated)
+const normalizeArrayField = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    // If it's a comma-separated string (e.g., from legacy input)
+    return value.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+};
+
 // ✅ Resolve categories same way in create + update
 async function resolveCategories({ categoryId, subCategoryId, category, subcategory }) {
   let parentCat = null;
@@ -169,6 +181,10 @@ exports.createProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: e.message || "Category invalid" });
     }
 
+    // 👇 Normalise color and size to arrays
+    const colorArray = normalizeArrayField(color);
+    const sizeArray = normalizeArrayField(size);
+
     const product = await Product.create({
       // ✅ manufacturer-wise ownership
       manufacturer: req.user.id,
@@ -194,9 +210,9 @@ exports.createProduct = async (req, res) => {
       lowStockThreshold: finalLowStock,
       availability: finalAvailability,
 
-      color: color?.trim(),
+      color: colorArray,                // ✅ array
       material: material?.trim(),
-      size: size?.trim(),
+      size: sizeArray,                   // ✅ array
       weight: weight?.trim(),
       location: location?.trim(),
       deliveryTime: deliveryTime?.trim(),
@@ -358,10 +374,10 @@ exports.updateProduct = async (req, res) => {
     if (categoryChangeRequested) {
       try {
         const resolved = await resolveCategories({
-          categoryId: categoryId || existing.categoryId,
-          subCategoryId: subCategoryId || existing.subCategoryId,
-          category: category || existing.category,
-          subcategory: subcategory || existing.subcategory,
+          categoryId: categoryId ?? existing.categoryId,
+          subCategoryId: subCategoryId ?? existing.subCategoryId,
+          category: category ?? existing.category,
+          subcategory: subcategory ?? existing.subcategory,
         });
 
         finalCategorySlug = resolved.finalCategorySlug;
@@ -377,8 +393,11 @@ exports.updateProduct = async (req, res) => {
     const nextQty = quantity !== undefined ? parseInt(quantity, 10) : existing.quantity;
     const nextLowStock =
       lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : (existing.lowStockThreshold || 5);
-
     const nextAvailability = computeAvailability(nextQty, nextLowStock);
+
+    // 👇 Normalise color and size (if provided, otherwise keep existing)
+    const colorArray = color !== undefined ? normalizeArrayField(color) : existing.color;
+    const sizeArray = size !== undefined ? normalizeArrayField(size) : existing.size;
 
     const updateData = {
       ...(name !== undefined && { name: name.trim() }),
@@ -398,9 +417,9 @@ exports.updateProduct = async (req, res) => {
       lowStockThreshold: nextLowStock,
       availability: nextAvailability,
 
-      ...(color !== undefined && { color: color?.trim() }),
+      color: colorArray,                // ✅ array
       ...(material !== undefined && { material: material?.trim() }),
-      ...(size !== undefined && { size: size?.trim() }),
+      size: sizeArray,                   // ✅ array
       ...(weight !== undefined && { weight: weight?.trim() }),
       ...(location !== undefined && { location: location?.trim() }),
       ...(deliveryTime !== undefined && { deliveryTime: deliveryTime?.trim() }),

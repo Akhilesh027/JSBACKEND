@@ -1,15 +1,14 @@
-// models/MidrangeOrder.js
-// ✅ FULL UPDATED SCHEMA for COD + RAZORPAY + Coupons + Shipping Discount + Tax
-// ✅ Matches the updated controller fields (totals + coupon snapshot + razorpay ids/signature)
-// ✅ Adds status "pending_payment" for online flows (optional but safe)
-
 const mongoose = require("mongoose");
+
+const statusHistoryEntrySchema = new mongoose.Schema({
+  status: { type: String, required: true },
+  changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  changedAt: { type: Date, default: Date.now },
+  note: { type: String, default: "" },
+}, { _id: false }); // or keep _id if you prefer
 
 const midrangeOrderSchema = new mongoose.Schema(
   {
-    // -----------------------------
-    // Core
-    // -----------------------------
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Customer",
@@ -19,36 +18,22 @@ const midrangeOrderSchema = new mongoose.Schema(
 
     website: {
       type: String,
-      enum: ["affordable", "mid_range", "luxury"],
-      default: "mid_range",
+      enum: ["affordable", "midrange", "luxury","mid_range"], // changed from "mid_range"
+      default: "midrange",
       index: true,
     },
 
-    // -----------------------------
-    // Items
-    // -----------------------------
-    items: [
-      {
-        productId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Product",
-          required: true,
-        },
-        name: { type: String, default: "" },
-        image: { type: String, default: "" },
+    items: [{
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+      name: { type: String, default: "" },
+      image: { type: String, default: "" },
+      quantity: { type: Number, required: true, min: 1 },
+      price: { type: Number, required: true },
+      discountPercent: { type: Number, default: 10 },
+      discountAmount: { type: Number, default: 0 },
+      finalPrice: { type: Number, required: true },
+    }],
 
-        quantity: { type: Number, required: true, min: 1 },
-
-        price: { type: Number, required: true }, // original
-        discountPercent: { type: Number, default: 10 },
-        discountAmount: { type: Number, default: 0 },
-        finalPrice: { type: Number, required: true }, // discounted
-      },
-    ],
-
-    // -----------------------------
-    // Address snapshot
-    // -----------------------------
     addressSnapshot: {
       fullName: { type: String, default: "" },
       phone: { type: String, default: "" },
@@ -60,71 +45,70 @@ const midrangeOrderSchema = new mongoose.Schema(
       pincode: { type: String, default: "" },
     },
 
-    // -----------------------------
-    // Totals (supports coupons + shipping discount)
-    // -----------------------------
     totals: {
-      // items total after your product-level discount (10%)
       subtotal: { type: Number, default: 0 },
-
-      // coupon discount on subtotal
       discount: { type: Number, default: 0 },
-
-      // shipping before coupon
       shippingBase: { type: Number, default: 0 },
-
-      // shipping discount from coupon (free shipping etc.)
       shippingDiscount: { type: Number, default: 0 },
-
-      // shipping after coupon
       shipping: { type: Number, default: 0 },
-
-      // tax (GST)
       tax: { type: Number, default: 0 },
-
-      // final total
       total: { type: Number, default: 0 },
     },
 
-    // -----------------------------
-    // Coupon snapshot (optional)
-    // -----------------------------
     coupon: {
       couponId: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon", default: null },
       code: { type: String, default: "" },
-      type: { type: String, enum: ["percentage", "flat", "free_shipping"], default: undefined },
+      type: { type: String, enum: ["percentage", "flat", "free_shipping"] },
       value: { type: Number, default: 0 },
-      maxDiscount: { type: Number, default: undefined },
+      maxDiscount: { type: Number },
     },
 
-    // -----------------------------
-    // Payment
-    // -----------------------------
     payment: {
       method: { type: String, enum: ["COD", "RAZORPAY", "CARD"], default: "COD" },
-      status: { type: String, enum: ["pending", "paid", "failed"], default: "pending" },
-
-      // optional for clarity
+      status: { type: String, enum: ["pending", "paid", "failed", "unpaid"], default: "pending" },
       gateway: { type: String, default: "" },
-
-      // Razorpay proof fields (for RAZORPAY payments)
       razorpayOrderId: { type: String, default: "" },
       razorpayPaymentId: { type: String, default: "" },
       razorpaySignature: { type: String, default: "" },
-
-      // generic transaction reference (optional)
       transactionId: { type: String, default: "" },
     },
 
-    // -----------------------------
-    // Order status
-    // -----------------------------
+    // ----- Status fields -----
     status: {
       type: String,
-      enum: ["pending_payment", "placed", "confirmed", "shipped", "delivered", "cancelled"],
+      enum: [
+        "pending_payment", "placed", "approved", "confirmed",
+        "shipped", "intransit", "delivered", "assemble",
+        "cancelled", "rejected", "processing", "returned"
+      ],
       default: "placed",
       index: true,
     },
+
+    // Reason fields
+    rejectionReason: { type: String, default: "" },
+    cancelReason: { type: String, default: "" },
+
+    // Status history
+    statusHistory: [statusHistoryEntrySchema],
+
+    // Timestamps for each status change (set by controller)
+    approvedAt: Date,
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    confirmedAt: Date,
+    confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    shippedAt: Date,
+    shippedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    inTransitAt: Date,
+    inTransitBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    deliveredAt: Date,
+    deliveredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    assembledAt: Date,
+    assembledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    cancelledAt: Date,
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    rejectedAt: Date,
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );

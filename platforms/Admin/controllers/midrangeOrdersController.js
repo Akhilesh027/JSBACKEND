@@ -1,25 +1,30 @@
-const MidrangeOrder = require("../../midrange-website/models/MidrangeOrder"); // ✅ change path
-const MidrangeUser = require("../../midrange-website/models/midrange_customers"); // ✅ change path
-const MidrangeAddress = require("../../midrange-website/models/MidrangeAddress"); // ✅ change path
-const VALID_STATUSES = [
-  "placed",
-  "approved",
-  "confirmed",
-  "shipped",
-  "delivered",
-  "cancelled",
-  "rejected",
-];
+const mongoose = require("mongoose");
+
+const MidrangeOrder = require("../../midrange-website/models/MidrangeOrder");
+const MidrangeUser = require("../../midrange-website/models/midrange_customers");
+const MidrangeAddress = require("../../midrange-website/models/MidrangeAddress");
+
+/* ---------------- STATUS FLOW ---------------- */
 
 const STATUS_FLOW = {
+  pending: ["approved", "rejected", "cancelled"],
   placed: ["approved", "rejected", "cancelled"],
   approved: ["confirmed", "cancelled"],
   confirmed: ["shipped", "cancelled"],
-  shipped: ["delivered"],
-  delivered: [],
-  cancelled: [],
+  shipped: ["intransit", "cancelled"],
+  intransit: ["delivered"],
+  delivered: ["assemble"],
+  assemble: [],
   rejected: [],
+  cancelled: [],
+  returned: [],
+  pending_payment: [],
+  processing: [],
 };
+
+const VALID_STATUSES = Object.keys(STATUS_FLOW);
+
+/* ---------------- HELPERS ---------------- */
 
 function canMove(from, to) {
   if (!from || !to) return false;
@@ -27,18 +32,113 @@ function canMove(from, to) {
   return (STATUS_FLOW[from] || []).includes(to);
 }
 
-/**
- * PATCH /api/admin/midrange/orders/:id/status
- * body: { status: "confirmed" }
- */
+function appendStatusHistory(order, status, userId = null, note = "") {
+  order.statusHistory = Array.isArray(order.statusHistory)
+    ? order.statusHistory
+    : [];
+
+  order.statusHistory.push({
+    status,
+    changedBy: userId,
+    changedAt: new Date(),
+    note,
+  });
+}
+
+function applyStatusTimestamp(order, status, userId = null) {
+  const now = new Date();
+
+  switch (status) {
+    case "approved":
+      order.approvedAt = now;
+      order.approvedBy = userId;
+      break;
+
+    case "confirmed":
+      order.confirmedAt = now;
+      order.confirmedBy = userId;
+      break;
+
+    case "shipped":
+      order.shippedAt = now;
+      order.shippedBy = userId;
+      break;
+
+    case "intransit":
+      order.inTransitAt = now;
+      order.inTransitBy = userId;
+      break;
+
+    case "delivered":
+      order.deliveredAt = now;
+      order.deliveredBy = userId;
+      break;
+
+    case "assemble":
+      order.assembledAt = now;
+      order.assembledBy = userId;
+      break;
+
+    case "cancelled":
+      order.cancelledAt = now;
+      order.cancelledBy = userId;
+      break;
+
+    case "rejected":
+      order.rejectedAt = now;
+      order.rejectedBy = userId;
+      break;
+
+    default:
+      break;
+  }
+}
+
+/* ---------------- ORDER ENRICH ---------------- */
+
+async function enrichMidrangeOrder(orderDoc) {
+  const o = orderDoc?.toObject ? orderDoc.toObject() : orderDoc;
+  if (!o) return null;
+
+  const [user, address] = await Promise.all([
+    o.userId
+      ? MidrangeUser.findById(o.userId)
+          .select("_id name firstName lastName email phone")
+          .lean()
+      : null,
+    o.addressId ? MidrangeAddress.findById(o.addressId).lean() : null,
+  ]);
+
+  return {
+    ...o,
+    website: o.website || "midrange",
+    userDetails: user
+      ? {
+          _id: user._id,
+          name:
+            user.name ||
+            `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
+            "Customer",
+          email: user.email,
+          phone: user.phone,
+        }
+      : null,
+    addressDetails: address || null,
+  };
+}
+
+/* ---------------- UPDATE STATUS ---------------- */
+
 exports.updateOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status || typeof status !== "string") {
+    if (!mongoose.Types.ObjectId.isValid(id))
+      return res.status(400).json({ message: "Invalid order id" });
+
+    if (!status || typeof status !== "string")
       return res.status(400).json({ message: "Status is required" });
-    }
 
     const nextStatus = status.toLowerCase().trim();
 
@@ -53,152 +153,220 @@ exports.updateOrderStatus = async (req, res) => {
 
     const currentStatus = (order.status || "").toLowerCase();
 
-    // ✅ prevent illegal transitions
     if (!canMove(currentStatus, nextStatus)) {
       return res.status(400).json({
         message: `Cannot change status from "${currentStatus}" to "${nextStatus}"`,
+        currentStatus,
+        allowedNext: STATUS_FLOW[currentStatus] || [],
       });
     }
 
-    // ✅ optional: when cancelling, store reason
-    if (nextStatus === "cancelled") {
-      order.cancelledAt = new Date();
-      // order.cancelReason = req.body.reason || ""; // if you want
+    order.status = nextStatus;
+    order.updatedAt = new Date();
+
+    if (nextStatus === "cancelled" && req.body?.reason) {
+      order.cancelReason = String(req.body.reason);
     }
 
-    // ✅ optional: when delivered
     if (nextStatus === "delivered") {
-      order.deliveredAt = new Date();
-      // if COD then mark paid on delivery
-      if ((order.payment?.method || "").toUpperCase() === "COD") {
-        order.payment = {
-          ...(order.payment || {}),
-          status: "paid",
-        };
+      if (order.payment && order.payment.method === "COD") {
+        order.payment.status = "paid";
       }
     }
 
-    order.status = nextStatus;
+    const adminId = req.user ? req.user.id : null;
+
+    applyStatusTimestamp(order, nextStatus, adminId);
+    appendStatusHistory(order, nextStatus, adminId, req.body?.reason || "");
+
     await order.save();
+
+    const enriched = await enrichMidrangeOrder(order);
 
     return res.json({
       message: "Order status updated",
-      order,
+      order: enriched,
+      nextAllowed: STATUS_FLOW[nextStatus] || [],
     });
   } catch (err) {
     console.error("updateOrderStatus error:", err);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
-/**
- * GET /api/admin/midrange/orders?status=placed|confirmed|shipped|delivered
- * Returns orders with userDetails + addressDetails so frontend can show it.
- */
+
+/* ---------------- GET ORDERS ---------------- */
+
 exports.getMidrangeOrders = async (req, res) => {
   try {
     const { status } = req.query;
 
     const query = {};
-    if (status) query.status = status;
+    if (status && status !== "all") query.status = status.toLowerCase();
 
-    // newest first
-    const orders = await MidrangeOrder.find(query).sort({ createdAt: -1 }).lean();
+    const orders = await MidrangeOrder.find(query)
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // attach userDetails + addressDetails
     const userIds = orders.map((o) => o.userId).filter(Boolean);
     const addressIds = orders.map((o) => o.addressId).filter(Boolean);
 
-    const users = await MidrangeUser.find({ _id: { $in: userIds } })
-      .select("_id name email")
-      .lean();
-
-    const addresses = await MidrangeAddress.find({ _id: { $in: addressIds } }).lean();
+    const [users, addresses] = await Promise.all([
+      MidrangeUser.find({ _id: { $in: userIds } })
+        .select("_id name firstName lastName email phone")
+        .lean(),
+      MidrangeAddress.find({ _id: { $in: addressIds } }).lean(),
+    ]);
 
     const userMap = new Map(users.map((u) => [String(u._id), u]));
     const addressMap = new Map(addresses.map((a) => [String(a._id), a]));
 
-    const enriched = orders.map((o) => ({
-      ...o,
-      userDetails: userMap.get(String(o.userId)) || null,
-      addressDetails: addressMap.get(String(o.addressId)) || null,
-    }));
+    const enriched = orders.map((o) => {
+      const u = userMap.get(String(o.userId));
 
-    return res.json(enriched); // ✅ frontend supports array
-    // OR if you prefer:
-    // return res.json({ data: enriched });
+      return {
+        ...o,
+        website: o.website || "midrange",
+        userDetails: u
+          ? {
+              _id: u._id,
+              name:
+                u.name ||
+                `${u.firstName || ""} ${u.lastName || ""}`.trim() ||
+                "Customer",
+              email: u.email,
+              phone: u.phone,
+            }
+          : null,
+        addressDetails: addressMap.get(String(o.addressId)) || null,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
-    return res.status(500).json({
+    console.error(err);
+    res.status(500).json({
       message: "Failed to fetch midrange orders",
-      error: err?.message,
+      error: err.message,
     });
   }
 };
 
-/**
- * PATCH /api/admin/midrange/orders/:id/approve
- * placed -> confirmed
- */
+/* ---------------- APPROVE ORDER ---------------- */
+
 exports.approveMidrangeOrder = async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(id))
+      return res.status(400).json({ message: "Invalid order id" });
+
     const order = await MidrangeOrder.findById(id);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    // Only approve placed orders (you can relax this if you want)
-    if (order.status !== "placed") {
-      return res.status(400).json({ message: `Cannot approve order in status: ${order.status}` });
+    const status = String(order.status).toLowerCase();
+
+    if (!["placed", "pending"].includes(status)) {
+      return res.status(400).json({
+        message: `Cannot approve order in status: ${order.status}`,
+      });
     }
 
-    order.status = "confirmed";
+    order.status = "approved";
     order.updatedAt = new Date();
+
+    const adminId = req.user ? req.user.id : null;
+
+    applyStatusTimestamp(order, "approved", adminId);
+    appendStatusHistory(order, "approved", adminId);
+
     await order.save();
 
-    return res.json({
+    const enriched = await enrichMidrangeOrder(order);
+
+    res.json({
       message: "Order approved successfully",
-      order,
+      order: enriched,
     });
   } catch (err) {
-    return res.status(500).json({
+    console.error(err);
+    res.status(500).json({
       message: "Failed to approve order",
-      error: err?.message,
+      error: err.message,
     });
   }
 };
 
-/**
- * PATCH /api/admin/midrange/orders/:id/reject
- * placed -> rejected (store reason if field exists)
- */
+/* ---------------- REJECT ORDER ---------------- */
+
 exports.rejectMidrangeOrder = async (req, res) => {
   try {
     const { id } = req.params;
     const { reason = "" } = req.body || {};
 
+    if (!mongoose.Types.ObjectId.isValid(id))
+      return res.status(400).json({ message: "Invalid order id" });
+
     const order = await MidrangeOrder.findById(id);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    if (order.status !== "placed") {
-      return res.status(400).json({ message: `Cannot reject order in status: ${order.status}` });
+    const status = String(order.status).toLowerCase();
+
+    if (!["placed", "pending"].includes(status)) {
+      return res.status(400).json({
+        message: `Cannot reject order in status: ${order.status}`,
+      });
     }
 
     order.status = "rejected";
     order.updatedAt = new Date();
 
-    // Optional: if your schema has these fields
-    if ("rejectionReason" in order) order.rejectionReason = reason;
-    if ("rejectedAt" in order) order.rejectedAt = new Date();
+    const adminId = req.user ? req.user.id : null;
+
+    order.rejectionReason = reason;
+
+    applyStatusTimestamp(order, "rejected", adminId);
+    appendStatusHistory(order, "rejected", adminId, reason);
 
     await order.save();
 
-    return res.json({
+    const enriched = await enrichMidrangeOrder(order);
+
+    res.json({
       message: "Order rejected successfully",
-      order,
+      order: enriched,
     });
   } catch (err) {
-    return res.status(500).json({
+    console.error(err);
+    res.status(500).json({
       message: "Failed to reject order",
-      error: err?.message,
+      error: err.message,
+    });
+  }
+};
+
+/* ---------------- GET ORDER BY ID ---------------- */
+
+exports.getMidrangeOrderById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id))
+      return res.status(400).json({ message: "Invalid order id" });
+
+    const order = await MidrangeOrder.findById(id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const enriched = await enrichMidrangeOrder(order);
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("getMidrangeOrderById error:", err);
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
     });
   }
 };

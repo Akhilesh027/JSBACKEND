@@ -1,4 +1,3 @@
-// controllers/estimateController.js
 const Estimate = require("../models/Estimate");
 
 const ok = (res, data, message = "OK") =>
@@ -6,6 +5,8 @@ const ok = (res, data, message = "OK") =>
 
 const bad = (res, status, message) =>
   res.status(status).json({ success: false, message });
+
+// ---------- Existing endpoints (unchanged) ----------
 
 exports.createEstimate = async (req, res) => {
   try {
@@ -118,14 +119,13 @@ exports.getEstimateById = async (req, res) => {
     return bad(res, 500, err.message || "Server error");
   }
 };
-// GET /api/estimates?status=submitted&q=search
+
 exports.getAllEstimates = async (req, res) => {
   try {
-    // optional filters
     const { status, q } = req.query;
 
     const filter = {};
-    if (status) filter.status = status; // draft/submitted
+    if (status) filter.status = status;
 
     if (q) {
       const s = String(q).trim();
@@ -139,8 +139,31 @@ exports.getAllEstimates = async (req, res) => {
     }
 
     const list = await Estimate.find(filter).sort({ createdAt: -1 });
-
     return ok(res, list, "Estimates fetched");
+  } catch (err) {
+    return bad(res, 500, err.message || "Server error");
+  }
+};
+
+// ---------- NEW: Admin update endpoint for amounts ----------
+exports.updateEstimate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { estimatedAmount, totalAmount } = req.body;
+
+    // Build update object – only allow these two fields
+    const update = {};
+    if (estimatedAmount !== undefined) update.estimatedAmount = Number(estimatedAmount);
+    if (totalAmount !== undefined) update.totalAmount = Number(totalAmount);
+
+    const estimate = await Estimate.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!estimate) return bad(res, 404, "Estimate not found");
+
+    return ok(res, estimate, "Estimate updated");
   } catch (err) {
     return bad(res, 500, err.message || "Server error");
   }

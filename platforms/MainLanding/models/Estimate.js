@@ -19,6 +19,10 @@ const EstimateSchema = new mongoose.Schema(
     whatsappUpdates: { type: Boolean, default: true },
     city: { type: String, default: "" },
 
+    // ✅ New fields for admin pricing
+    estimatedAmount: { type: Number, min: 0 },
+    totalAmount: { type: Number, min: 0 },
+
     status: { type: String, enum: ["draft", "submitted"], default: "draft" },
   },
   { timestamps: true }

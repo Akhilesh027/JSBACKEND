@@ -42,8 +42,8 @@ const VendorOrderSchema = new mongoose.Schema(
     orderNumber: { type: String, unique: true, index: true }, // ex: VOR-2026-000001
     status: {
       type: String,
-      enum: ["pending", "reviewing", "confirmed", "rejected", "processing", "shipped", "delivered", "cancelled","approved"],
-      default: "pending",
+      enum: ["pending","Placed","reviewing", "confirmed", "rejected", "processing", "shipped", "delivered", "cancelled","approved"],
+      default: "Placed",
       index: true,
     },
 

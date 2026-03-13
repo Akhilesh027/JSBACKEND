@@ -36,7 +36,7 @@ const statusHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["placed", "approved", "confirmed", "shipped", "delivered", "cancelled"],
+      enum: ["placed", "approved", "confirmed", "shipped", "delivered", "cancelled","intransit","assemble"],
       required: true,
     },
     changedAt: { type: Date, default: Date.now },
@@ -93,7 +93,9 @@ const orderSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["placed", "approved", "confirmed", "shipped", "delivered", "cancelled"],
+      default: "placed",
+      default: "placed",
+      enum: ["placed", "approved", "confirmed", "shipped", "delivered", "cancelled","intransit","assemble"],
       default: "placed",
       index: true,
     },

@@ -1,6 +1,13 @@
 // models/luxury_orders.js
 const mongoose = require("mongoose");
 
+const statusHistoryEntrySchema = new mongoose.Schema({
+  status: { type: String, required: true },
+  changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  changedAt: { type: Date, default: Date.now },
+  note: { type: String, default: "" },
+}, { _id: false }); // optional: keep _id if you want separate IDs
+
 const LuxuryOrderSchema = new mongoose.Schema(
   {
     customerId: {
@@ -27,7 +34,6 @@ const LuxuryOrderSchema = new mongoose.Schema(
       },
     ],
 
-    // ✅ expanded pricing to match your controller fields
     pricing: {
       subtotal: { type: Number, required: true, min: 0 },
       discount: { type: Number, default: 0, min: 0 },
@@ -36,8 +42,6 @@ const LuxuryOrderSchema = new mongoose.Schema(
       shipping: { type: Number, required: true, min: 0 },
       total: { type: Number, required: true, min: 0 },
       currency: { type: String, default: "INR" },
-
-      // ✅ store coupon snapshot inside pricing (your controller already does this)
       coupon: {
         couponId: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon" },
         code: { type: String, default: "" },
@@ -53,7 +57,6 @@ const LuxuryOrderSchema = new mongoose.Schema(
       lastName: { type: String, default: "" },
       email: { type: String, default: "" },
       phone: { type: String, default: "" },
-
       addressLine1: { type: String, required: true },
       addressLine2: { type: String, default: "" },
       city: { type: String, required: true },
@@ -63,7 +66,6 @@ const LuxuryOrderSchema = new mongoose.Schema(
     },
 
     payment: {
-      // ✅ include razorpay
       method: {
         type: String,
         enum: ["card", "upi", "netbanking", "cod", "razorpay"],
@@ -74,15 +76,11 @@ const LuxuryOrderSchema = new mongoose.Schema(
         enum: ["pending", "paid", "unpaid", "failed", "refunded"],
         default: "pending",
       },
-
-      gateway: { type: String, default: "" }, // "razorpay"
+      gateway: { type: String, default: "" },
       transactionId: { type: String, default: "" },
-
-      // ✅ Razorpay fields (store proof)
       razorpayOrderId: { type: String, default: "" },
       razorpayPaymentId: { type: String, default: "" },
       razorpaySignature: { type: String, default: "" },
-
       meta: {
         upiId: { type: String, default: "" },
         bank: { type: String, default: "" },
@@ -90,21 +88,51 @@ const LuxuryOrderSchema = new mongoose.Schema(
       },
     },
 
+    // ---------- Status fields ----------
     status: {
       type: String,
       enum: [
         "pending_payment",
         "placed",
-        "cancelled",
+        "approved",          // ✅ added
+        "rejected",           // ✅ added
         "confirmed",
         "processing",
         "shipped",
+        "intransit",          // ✅ added
         "delivered",
+        "assemble",           // ✅ added
+        "cancelled",
         "returned",
       ],
       default: "placed",
       index: true,
     },
+
+    // Reason fields (used by controller)
+    rejectionReason: { type: String, default: "" },
+    cancelReason: { type: String, default: "" },
+
+    // Status history (used by appendStatusHistory)
+    statusHistory: [statusHistoryEntrySchema],
+
+    // Timestamps for each status change (set by applyStatusTimestamp)
+    approvedAt: Date,
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    confirmedAt: Date,
+    confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    shippedAt: Date,
+    shippedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    inTransitAt: Date,
+    inTransitBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    deliveredAt: Date,
+    deliveredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    assembledAt: Date,
+    assembledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    cancelledAt: Date,
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    rejectedAt: Date,
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     website: { type: String, default: "luxury", index: true },
     orderNumber: { type: String, unique: true, index: true },
@@ -113,7 +141,7 @@ const LuxuryOrderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// ✅ recalc line totals + pricing safety (but DO NOT overwrite discounts)
+// ... (your pre‑validate and pre‑save hooks remain unchanged) ...
 LuxuryOrderSchema.pre("validate", function (next) {
   try {
     if (Array.isArray(this.items)) {
@@ -130,11 +158,9 @@ LuxuryOrderSchema.pre("validate", function (next) {
       this.pricing = this.pricing || {};
       this.pricing.subtotal = subtotal;
 
-      // keep shipping already computed by controller
       const shipping = Number(this.pricing.shipping ?? 0) || 0;
       const discount = Number(this.pricing.discount ?? 0) || 0;
 
-      // ✅ total = subtotal - discount + shipping (clamped)
       const total = Math.max(0, subtotal - Math.max(0, discount) + Math.max(0, shipping));
       this.pricing.total = total;
 
@@ -152,7 +178,6 @@ LuxuryOrderSchema.pre("save", function (next) {
     this.orderNumber = `LUX-${Date.now()}-${rand}`;
   }
 
-  // ✅ align COD statuses
   if (this.payment?.method === "cod") {
     if (!this.payment.status || this.payment.status === "pending") this.payment.status = "unpaid";
     if (this.status === "pending_payment") this.status = "placed";

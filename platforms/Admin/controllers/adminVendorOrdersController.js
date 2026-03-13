@@ -1,11 +1,27 @@
 const mongoose = require("mongoose");
-const VendorOrder = require("../../Vendor/models/VendorOrder"); // adjust path
-const Vendor = require("../../Vendor/models/Vendor"); // adjust path
+const VendorOrder = require("../../Vendor/models/VendorOrder");
+const Vendor = require("../../Vendor/models/Vendor");
 
 const safeLower = (s) => String(s || "").trim().toLowerCase();
 const isObjectId = (v) => mongoose.Types.ObjectId.isValid(String(v || ""));
 
-/** ✅ Single source of truth for allowed statuses (admin side) */
+const normalizeStatus = (status) => {
+  const s = safeLower(status);
+
+  if (s === "placed") return "Placed";
+  if (s === "approved") return "approved";
+  if (s === "confirmed") return "confirmed";
+  if (s === "processing") return "processing";
+  if (s === "shipped") return "shipped";
+  if (s === "delivered") return "delivered";
+  if (s === "cancelled") return "cancelled";
+  if (s === "rejected") return "rejected";
+  if (s === "reviewing") return "reviewing";
+  if (s === "pending") return "pending";
+
+  return status;
+};
+
 const ALLOWED_STATUSES = new Set([
   "placed",
   "approved",
@@ -14,109 +30,198 @@ const ALLOWED_STATUSES = new Set([
   "shipped",
   "delivered",
   "cancelled",
-  "returned",
   "rejected",
+  "reviewing",
+  "pending",
 ]);
 
-/**
- * ✅ Status transition rules (edit if your business logic differs)
- * placed -> approved / rejected / cancelled
- * approved -> confirmed / cancelled
- * confirmed -> processing / shipped / cancelled
- * processing -> shipped / cancelled
- * shipped -> delivered / returned
- * delivered -> (terminal)
- * rejected/cancelled/returned -> (terminal)
- */
 const TRANSITIONS = {
-  placed: new Set(["approved", "rejected", "cancelled"]),
+  placed: new Set(["approved", "rejected", "cancelled", "reviewing"]),
+  reviewing: new Set(["approved", "rejected", "cancelled"]),
   approved: new Set(["confirmed", "cancelled"]),
   confirmed: new Set(["processing", "shipped", "cancelled"]),
   processing: new Set(["shipped", "cancelled"]),
-  shipped: new Set(["delivered", "returned"]),
+  shipped: new Set(["delivered"]),
   delivered: new Set([]),
   rejected: new Set([]),
   cancelled: new Set([]),
-  returned: new Set([]),
+  pending: new Set(["approved", "rejected", "cancelled", "reviewing"]),
 };
 
-const isTerminal = (s) => ["delivered", "rejected", "cancelled", "returned"].includes(s);
+const isTerminal = (s) => ["delivered", "rejected", "cancelled"].includes(s);
 
-/** ✅ Normalize order response to UI shape */
-function mapVendorOrder(o) {
+function mapVendorDetails(vendor) {
+  if (!vendor) return null;
+
   return {
-    _id: String(o._id),
-    website: o.website,
-    websiteLabel: o.websiteLabel,
-    vendor: {
-      vendorId: String(o.vendor?._id || ""),
-      vendorName: o.vendor?.businessName || o.vendor?.name || "—",
-      vendorSegment: o.vendor?.vendorSegment || o.vendor?.segment || "affordable",
-      payoutStatus: o.vendor?.payoutStatus || "pending",
-    },
-    items: (o.items || []).map((it) => ({
-      productId: String(it.productId || it.product || ""),
-      name: it.name || it.productSnapshot?.name,
-      image: it.image || it.productSnapshot?.image,
-      quantity: Number(it.quantity || 0),
-      price: it.price,
-      discountPercent: it.discountPercent,
-      discountAmount: it.discountAmount,
-      finalPrice: it.finalPrice,
-      productSnapshot: it.productSnapshot,
-    })),
-    totals: o.totals,
-    pricing: o.pricing,
-    payment: o.payment,
-    status: o.status,
-    createdAt: o.createdAt,
-    updatedAt: o.updatedAt,
-    adminDecision: o.adminDecision,
+    _id: String(vendor._id || ""),
+    companyName: vendor.companyName || "",
+    legalName: vendor.legalName || "",
+    companyType: vendor.companyType || "",
+    telephone: vendor.telephone || "",
+    mobile: vendor.mobile || "",
+    email: vendor.email || "",
+    country: vendor.country || "",
+    city: vendor.city || "",
+    businessNature: vendor.businessNature || "",
+    estYear: vendor.estYear || null,
+    relation: vendor.relation || "",
+    employees: vendor.employees || "",
+    pan: vendor.pan || "",
+    gst: vendor.gst || "",
+    items: vendor.items || "",
+    legalDisputes: vendor.legalDisputes || "",
+    exportCountries: vendor.exportCountries || "",
+    description: vendor.description || "",
+    documentUrl: vendor.documentUrl || "",
+    status: vendor.status || "pending",
+    createdAt: vendor.createdAt || null,
+    updatedAt: vendor.updatedAt || null,
   };
 }
 
+function mapOrderItems(items = []) {
+  return items.map((it) => ({
+    productId: String(it.product || ""),
+    name: it.name || "",
+    sku: it.sku || "",
+    image: it.image || "",
+    tier: it.tier || "",
+    category: it.category || "",
+    subcategory: it.subcategory || "",
+    material: it.material || "",
+    color: it.color || "",
+    size: it.size || "",
+    unitPrice: Number(it.unitPrice || 0),
+    quantity: Number(it.quantity || 0),
+    lineTotal: Number(it.lineTotal || 0),
+  }));
+}
+
+function mapVendorOrder(order) {
+  return {
+    _id: String(order._id),
+    orderNumber: order.orderNumber || "",
+    status: order.status || "Placed",
+    note: order.note || "",
+    vendor: mapVendorDetails(order.vendor),
+    items: mapOrderItems(order.items || []),
+    shippingAddress: {
+      fullName: order.shippingAddress?.fullName || "",
+      phone: order.shippingAddress?.phone || "",
+      addressLine1: order.shippingAddress?.addressLine1 || "",
+      addressLine2: order.shippingAddress?.addressLine2 || "",
+      city: order.shippingAddress?.city || "",
+      state: order.shippingAddress?.state || "",
+      pincode: order.shippingAddress?.pincode || "",
+    },
+    pricing: {
+      subtotal: Number(order.pricing?.subtotal || 0),
+      gstRate: Number(order.pricing?.gstRate || 0),
+      gstAmount: Number(order.pricing?.gstAmount || 0),
+      total: Number(order.pricing?.total || 0),
+    },
+    meta: {
+      forwardedToAdmin: !!order.meta?.forwardedToAdmin,
+    },
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  };
+}
+
+/**
+ * GET /api/admin/vendor-orders
+ * query:
+ *   status=all|Placed|approved|...
+ *   search=orderNumber|orderId|vendorName|email|mobile
+ */
 exports.getVendorOrdersAdmin = async (req, res) => {
   try {
-    const segment = req.query.segment; // affordable | midrange | luxury | all
-    const status = req.query.status; // placed | approved | rejected | all
+    const status = String(req.query.status || "all").trim();
     const search = String(req.query.search || "").trim();
 
     const query = {};
 
-    // ✅ make status filter case-insensitive safe
     if (status && safeLower(status) !== "all") {
-      // If you store status in DB with mixed case (e.g., "Placed"),
-      // this regex keeps it compatible:
       query.status = { $regex: `^${status}$`, $options: "i" };
     }
 
     if (search) {
-      const or = [{ orderNumber: { $regex: search, $options: "i" } }];
-      if (isObjectId(search)) or.push({ _id: search });
-      query.$or = or;
+      const vendorMatches = await Vendor.find({
+        $or: [
+          { companyName: { $regex: search, $options: "i" } },
+          { legalName: { $regex: search, $options: "i" } },
+          { email: { $regex: search, $options: "i" } },
+          { mobile: { $regex: search, $options: "i" } },
+          { gst: { $regex: search, $options: "i" } },
+          { pan: { $regex: search, $options: "i" } },
+        ],
+      }).select("_id");
+
+      const vendorIds = vendorMatches.map((v) => v._id);
+
+      query.$or = [
+        { orderNumber: { $regex: search, $options: "i" } },
+        ...(isObjectId(search) ? [{ _id: search }] : []),
+        ...(vendorIds.length ? [{ vendor: { $in: vendorIds } }] : []),
+      ];
     }
 
     const orders = await VendorOrder.find(query)
       .sort({ createdAt: -1 })
-      .populate("vendor", "businessName name vendorSegment segment payoutStatus")
+      .populate("vendor")
       .lean();
 
-    // ✅ segment filter after populate
-    const filtered =
-      segment && safeLower(segment) !== "all"
-        ? orders.filter((o) => {
-            const seg = o.vendor?.vendorSegment || o.vendor?.segment;
-            return safeLower(seg) === safeLower(segment);
-          })
-        : orders;
-
-    return res.json({
+    return res.status(200).json({
       success: true,
-      orders: filtered.map(mapVendorOrder),
+      count: orders.length,
+      orders: orders.map(mapVendorOrder),
     });
   } catch (err) {
     console.error("getVendorOrdersAdmin error:", err);
-    return res.status(500).json({ message: "Failed to load vendor orders" });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load vendor orders",
+    });
+  }
+};
+
+/**
+ * GET /api/admin/vendor-orders/:orderId
+ * full single order details
+ */
+exports.getVendorOrderByIdAdmin = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!isObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid orderId",
+      });
+    }
+
+    const order = await VendorOrder.findById(orderId)
+      .populate("vendor")
+      .lean();
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      order: mapVendorOrder(order),
+    });
+  } catch (err) {
+    console.error("getVendorOrderByIdAdmin error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load order details",
+    });
   }
 };
 
@@ -124,150 +229,177 @@ exports.approveVendorOrderAdmin = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await VendorOrder.findById(orderId);
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (!isObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid orderId",
+      });
+    }
 
-    if (safeLower(order.status) !== "placed") {
-      return res
-        .status(400)
-        .json({ message: `Cannot approve from status: ${order.status}` });
+    const order = await VendorOrder.findById(orderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    if (safeLower(order.status) !== "placed" && safeLower(order.status) !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot approve from status: ${order.status}`,
+      });
     }
 
     order.status = "approved";
     order.updatedAt = new Date();
 
-    order.adminDecision = {
-      action: "approved",
-      by: req.user?.id || req.admin?.id,
-      at: new Date(),
-    };
-
     await order.save();
 
     const fresh = await VendorOrder.findById(order._id)
-      .populate("vendor", "businessName name vendorSegment segment payoutStatus")
+      .populate("vendor")
       .lean();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: "Order approved",
       order: mapVendorOrder(fresh),
     });
   } catch (err) {
     console.error("approveVendorOrderAdmin error:", err);
-    return res.status(500).json({ message: "Approve failed" });
+    return res.status(500).json({
+      success: false,
+      message: "Approve failed",
+    });
   }
 };
 
 exports.rejectVendorOrderAdmin = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const reason = String(req.body?.reason || "").trim();
+
+    if (!isObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid orderId",
+      });
+    }
 
     const order = await VendorOrder.findById(orderId);
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
 
-    if (safeLower(order.status) !== "placed") {
-      return res
-        .status(400)
-        .json({ message: `Cannot reject from status: ${order.status}` });
+    if (safeLower(order.status) !== "placed" && safeLower(order.status) !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot reject from status: ${order.status}`,
+      });
     }
 
     order.status = "rejected";
     order.updatedAt = new Date();
 
-    order.adminDecision = {
-      action: "rejected",
-      reason: reason || undefined,
-      by: req.user?.id || req.admin?.id,
-      at: new Date(),
-    };
-
     await order.save();
 
     const fresh = await VendorOrder.findById(order._id)
-      .populate("vendor", "businessName name vendorSegment segment payoutStatus")
+      .populate("vendor")
       .lean();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: "Order rejected",
       order: mapVendorOrder(fresh),
     });
   } catch (err) {
     console.error("rejectVendorOrderAdmin error:", err);
-    return res.status(500).json({ message: "Reject failed" });
+    return res.status(500).json({
+      success: false,
+      message: "Reject failed",
+    });
   }
 };
 
 /**
- * ✅ NEW: Generic status change
  * PATCH /api/admin/vendor-orders/:orderId/status
- * body: { status: "confirmed" | "shipped" | ... , reason?: string }
+ * body: { status: "confirmed" | "processing" | "shipped" | ... }
  */
 exports.updateVendorOrderStatusAdmin = async (req, res) => {
   try {
     const { orderId } = req.params;
     const nextStatusRaw = req.body?.status;
-    const reason = String(req.body?.reason || "").trim();
+
+    if (!isObjectId(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid orderId",
+      });
+    }
 
     const next = safeLower(nextStatusRaw);
-    if (!next) return res.status(400).json({ message: "status is required" });
+
+    if (!next) {
+      return res.status(400).json({
+        success: false,
+        message: "status is required",
+      });
+    }
 
     if (!ALLOWED_STATUSES.has(next)) {
       return res.status(400).json({
+        success: false,
         message: `Invalid status: ${nextStatusRaw}. Allowed: ${Array.from(ALLOWED_STATUSES).join(", ")}`,
       });
     }
 
     const order = await VendorOrder.findById(orderId);
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
 
     const current = safeLower(order.status);
 
-    // terminal lock
     if (isTerminal(current)) {
       return res.status(400).json({
+        success: false,
         message: `Cannot change status from terminal state: ${order.status}`,
       });
     }
 
-    // validate transition
     const allowedNext = TRANSITIONS[current] || new Set();
     if (!allowedNext.has(next)) {
       return res.status(400).json({
+        success: false,
         message: `Invalid transition: ${current} -> ${next}`,
         allowed: Array.from(allowedNext),
       });
     }
 
-    // update
-    order.status = next; // store normalized lowercase (recommended)
+    order.status = normalizeStatus(next);
     order.updatedAt = new Date();
-
-    // record admin decision trail (optional)
-    order.adminDecision = {
-      action: next === "rejected" ? "rejected" : next === "approved" ? "approved" : order.adminDecision?.action,
-      reason: reason || order.adminDecision?.reason,
-      by: req.user?.id || req.admin?.id,
-      at: new Date(),
-      from: current,
-      to: next,
-    };
 
     await order.save();
 
     const fresh = await VendorOrder.findById(order._id)
-      .populate("vendor", "businessName name vendorSegment segment payoutStatus")
+      .populate("vendor")
       .lean();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: `Status updated: ${current} -> ${next}`,
       order: mapVendorOrder(fresh),
     });
   } catch (err) {
     console.error("updateVendorOrderStatusAdmin error:", err);
-    return res.status(500).json({ message: "Status update failed" });
+    return res.status(500).json({
+      success: false,
+      message: "Status update failed",
+    });
   }
 };

@@ -1,4 +1,3 @@
-// models/Coupon.js
 const mongoose = require("mongoose");
 
 const CouponSchema = new mongoose.Schema(
@@ -16,21 +15,54 @@ const CouponSchema = new mongoose.Schema(
       index: true,
     },
 
-    visibility: { type: String, enum: ["public", "private"], default: "private" },
+    visibility: {
+      type: String,
+      enum: ["public", "private"],
+      default: "private",
+    },
 
-    type: { type: String, enum: ["percentage", "flat", "free_shipping"], required: true },
-    value: { type: Number, required: true, default: 0 }, // percent or ₹, free_shipping => 0
-    maxDiscount: { type: Number }, // only for percentage
+    type: {
+      type: String,
+      enum: ["percentage", "flat", "free_shipping"],
+      required: true,
+    },
 
-    minOrder: { type: Number }, // ₹
+    value: {
+      type: Number,
+      required: true,
+      default: 0,
+    }, // percent or ₹, free_shipping => 0
 
-    startAt: { type: Date, required: true },
-    endAt: { type: Date, required: true },
+    maxDiscount: {
+      type: Number,
+    }, // only for percentage
 
-    totalLimit: { type: Number }, // overall usage
-    perUserLimit: { type: Number },
+    minOrder: {
+      type: Number,
+    }, // ₹
 
-    usedCount: { type: Number, default: 0 },
+    startAt: {
+      type: Date,
+      required: true,
+    },
+
+    endAt: {
+      type: Date,
+      required: true,
+    },
+
+    totalLimit: {
+      type: Number,
+    }, // overall usage
+
+    perUserLimit: {
+      type: Number,
+    },
+
+    usedCount: {
+      type: Number,
+      default: 0,
+    },
 
     status: {
       type: String,
@@ -38,11 +70,30 @@ const CouponSchema = new mongoose.Schema(
       default: "draft",
       index: true,
     },
+
+    // ✅ category application scope
+    applyTo: {
+      type: String,
+      enum: ["all_categories", "selected_categories"],
+      default: "all_categories",
+    },
+
+    // ✅ selected categories
+    categories: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Category",
+      },
+    ],
   },
   { timestamps: true }
 );
 
 // ✅ unique per website + code
 CouponSchema.index({ website: 1, code: 1 }, { unique: true });
+
+// optional helpful indexes
+CouponSchema.index({ applyTo: 1 });
+CouponSchema.index({ categories: 1 });
 
 module.exports = mongoose.model("Coupon", CouponSchema);
