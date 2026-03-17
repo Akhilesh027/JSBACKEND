@@ -6,7 +6,7 @@ const statusHistoryEntrySchema = new mongoose.Schema({
   changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   changedAt: { type: Date, default: Date.now },
   note: { type: String, default: "" },
-}, { _id: false }); // optional: keep _id if you want separate IDs
+}, { _id: false });
 
 const LuxuryOrderSchema = new mongoose.Schema(
   {
@@ -25,9 +25,20 @@ const LuxuryOrderSchema = new mongoose.Schema(
           required: true,
           index: true,
         },
+        // ✅ NEW: variantId (if applicable)
+        variantId: {
+          type: mongoose.Schema.Types.ObjectId,
+          default: null,
+        },
+        // ✅ NEW: attributes snapshot
+        attributes: {
+          size: { type: String, default: null },
+          color: { type: String, default: null },
+          fabric: { type: String, default: null },
+        },
         name: { type: String, required: true, trim: true },
         image: { type: String, default: "" },
-        color: { type: String, default: "" },
+        color: { type: String, default: "" },               // legacy – kept for compatibility
         price: { type: Number, required: true, min: 0 },
         quantity: { type: Number, required: true, min: 1 },
         lineTotal: { type: Number, required: true, min: 0 },
@@ -88,20 +99,20 @@ const LuxuryOrderSchema = new mongoose.Schema(
       },
     },
 
-    // ---------- Status fields ----------
+    // ----- Status fields -----
     status: {
       type: String,
       enum: [
         "pending_payment",
         "placed",
-        "approved",          // ✅ added
-        "rejected",           // ✅ added
+        "approved",
+        "rejected",
         "confirmed",
         "processing",
         "shipped",
-        "intransit",          // ✅ added
+        "intransit",
         "delivered",
-        "assemble",           // ✅ added
+        "assemble",
         "cancelled",
         "returned",
       ],
@@ -109,14 +120,11 @@ const LuxuryOrderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Reason fields (used by controller)
     rejectionReason: { type: String, default: "" },
     cancelReason: { type: String, default: "" },
 
-    // Status history (used by appendStatusHistory)
     statusHistory: [statusHistoryEntrySchema],
 
-    // Timestamps for each status change (set by applyStatusTimestamp)
     approvedAt: Date,
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     confirmedAt: Date,
@@ -141,7 +149,6 @@ const LuxuryOrderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// ... (your pre‑validate and pre‑save hooks remain unchanged) ...
 LuxuryOrderSchema.pre("validate", function (next) {
   try {
     if (Array.isArray(this.items)) {

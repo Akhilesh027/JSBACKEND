@@ -1,4 +1,3 @@
-// controllers/cartController.js
 const mongoose = require("mongoose");
 const Cart = require("../models/MidRangeCart.js");
 const Product = require("../../manufacturer-portal/models/Product.js");
@@ -6,9 +5,28 @@ const Product = require("../../manufacturer-portal/models/Product.js");
 const ALLOWED_TIER = "mid_range";
 const ALLOWED_STATUS = "approved";
 
-async function getAllowedProduct(productId) {
+// ---------- Helpers ----------
+async function getProductWithVariant(productId, variantId = null) {
   if (!mongoose.Types.ObjectId.isValid(productId)) return null;
 
+  const product = await Product.findOne({
+    _id: productId,
+    tier: ALLOWED_TIER,
+    status: ALLOWED_STATUS,
+  }).lean();
+
+  if (!product) return null;
+
+  let variant = null;
+  if (variantId && product.variants) {
+    variant = product.variants.find((v) => String(v._id) === String(variantId));
+  }
+
+  return { product, variant };
+}
+
+async function getAllowedProduct(productId) {
+  if (!mongoose.Types.ObjectId.isValid(productId)) return null;
   return Product.findOne({
     _id: productId,
     tier: ALLOWED_TIER,
@@ -29,116 +47,94 @@ async function buildHydratedCart(userId) {
 
   const productMap = new Map(products.map((p) => [String(p._id), p]));
 
-  const cleaned = cart.items
-    .map((i) => {
-      const p = productMap.get(String(i.productId));
-      if (!p) return null;
-      return { product: p, quantity: i.quantity };
+  const items = cart.items
+    .map((item) => {
+      const product = productMap.get(String(item.productId));
+      if (!product) return null;
+
+      let variant = null;
+      if (item.variantId && product.variants) {
+        variant = product.variants.find((v) => String(v._id) === String(item.variantId));
+      }
+
+      return {
+        _id: item._id,
+        product,
+        variant,
+        quantity: item.quantity,
+        attributes: item.attributes,
+      };
     })
     .filter(Boolean);
 
-  return { userId, items: cleaned };
+  return { userId, items };
 }
 
-
+// ---------- Endpoints ----------
 exports.getCart = async (req, res) => {
   try {
     const paramUserId = req.params.id;
     const authUserId = req.user.id;
-
-    // 🔐 Security: user can access ONLY their own cart
-    if (String(paramUserId) !== String(authUserId)) {
+    if (String(paramUserId) !== String(authUserId))
       return res.status(403).json({ message: "Unauthorized access" });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(paramUserId)) {
+    if (!mongoose.Types.ObjectId.isValid(paramUserId))
       return res.status(400).json({ message: "Invalid user id" });
-    }
 
-    const cart = await Cart.findOne({ userId: paramUserId }).lean();
-
-    if (!cart) {
-      return res.json({
-        data: {
-          userId: paramUserId,
-          items: [],
-        },
-      });
-    }
-
-    // collect product ids
-    const productIds = cart.items.map((i) => i.productId);
-
-    // fetch only allowed products
-    const products = await Product.find({
-      _id: { $in: productIds },
-      tier: ALLOWED_TIER,
-      status: ALLOWED_STATUS,
-    }).lean();
-
-    const productMap = new Map(
-      products.map((p) => [String(p._id), p])
-    );
-
-    // hydrate + clean invalid items
-    const items = cart.items
-      .map((item) => {
-        const product = productMap.get(String(item.productId));
-        if (!product) return null;
-
-        return {
-          product,
-          quantity: item.quantity,
-        };
-      })
-      .filter(Boolean);
-
-    return res.json({
-      data: {
-        userId: paramUserId,
-        items,
-      },
-    });
+    const hydrated = await buildHydratedCart(paramUserId);
+    return res.json({ data: hydrated });
   } catch (err) {
-    console.error("GET CART ERROR:", err);
-    return res.status(500).json({
-      message: err.message || "Server error",
-    });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-/**
- * PUT /api/cart
- * Body: { items: [{ productId, quantity }] }
- * Replace entire cart (sync from frontend localStorage)
- */
 exports.replaceCart = async (req, res) => {
   try {
     const userId = req.user.id;
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
 
-    // validate + keep only allowed products
     const safeItems = [];
     for (const it of items) {
-      const pid = it?.productId;
+      const productId = it?.productId;
+      const variantId = it?.variantId || null;
       const qty = Math.max(1, Number(it?.quantity) || 1);
+      const attributes = it?.attributes || {};
 
-      const allowed = await getAllowedProduct(pid);
-      if (!allowed) continue;
+      if (!mongoose.Types.ObjectId.isValid(productId)) continue;
 
-      safeItems.push({ productId: allowed._id, quantity: qty });
+      const product = await getAllowedProduct(productId);
+      if (!product) continue;
+
+      if (variantId) {
+        if (!product.variants) continue;
+        const variant = product.variants.find((v) => String(v._id) === String(variantId));
+        if (!variant) continue;
+      }
+
+      safeItems.push({
+        _id: new mongoose.Types.ObjectId(),
+        productId,
+        variantId,
+        quantity: qty,
+        attributes: {
+          size: attributes.size || null,
+          color: attributes.color || null,
+          fabric: attributes.fabric || null,
+        },
+      });
     }
 
-    // merge duplicates (same productId)
+    // Merge duplicates (same productId+variantId)
     const mergedMap = new Map();
     for (const it of safeItems) {
-      const key = String(it.productId);
-      mergedMap.set(key, (mergedMap.get(key) || 0) + it.quantity);
+      const key = `${String(it.productId)}-${String(it.variantId || '')}`;
+      const existing = mergedMap.get(key);
+      if (existing) {
+        existing.quantity += it.quantity;
+      } else {
+        mergedMap.set(key, it);
+      }
     }
-    const merged = Array.from(mergedMap.entries()).map(([k, q]) => ({
-      productId: k,
-      quantity: q,
-    }));
+    const merged = Array.from(mergedMap.values());
 
     const cart = await Cart.findOneAndUpdate(
       { userId },
@@ -146,144 +142,123 @@ exports.replaceCart = async (req, res) => {
       { new: true, upsert: true }
     ).lean();
 
-    return res.json({ data: cart, message: "Cart synced" });
+    const hydrated = await buildHydratedCart(userId);
+    return res.json({ data: hydrated, message: "Cart synced" });
   } catch (err) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-/**
- * POST /api/cart/add
- * Body: { productId, quantity }
- * Adds (increments) one product
- */
 exports.addToCart = async (req, res) => {
   try {
-    // ✅ auth check
-    if (!req.user?.id) {
-      return res.status(401).json({ message: "Unauthorized (missing token)" });
-    }
+    if (!req.user?.id) return res.status(401).json({ message: "Unauthorized" });
 
     const userId = new mongoose.Types.ObjectId(req.user.id);
+    const { productId, variantId, quantity = 1, attributes = {} } = req.body;
 
-    const { productId, quantity = 1 } = req.body || {};
+    if (!productId) return res.status(400).json({ message: "productId is required" });
 
-    if (!productId) {
-      return res.status(400).json({ message: "productId is required" });
-    }
-
-    const allowed = await getAllowedProduct(productId);
-    if (!allowed) {
-      return res.status(400).json({
-        message: "Product not available (must be mid_range + approved)",
-      });
+    const productWithVariant = await getProductWithVariant(productId, variantId);
+    if (!productWithVariant) {
+      return res.status(400).json({ message: "Product not available" });
     }
 
     const qty = Math.max(1, Number(quantity) || 1);
-
     let cart = await Cart.findOne({ userId });
 
     if (!cart) {
       cart = await Cart.create({
         userId,
         tier: "mid_range",
-        items: [{ productId: allowed._id, quantity: qty }],
+        items: [{
+          _id: new mongoose.Types.ObjectId(),
+          productId,
+          variantId: variantId || null,
+          quantity: qty,
+          attributes: {
+            size: attributes.size || null,
+            color: attributes.color || null,
+            fabric: attributes.fabric || null,
+          },
+        }],
       });
+    } else {
+      const existing = cart.items.find(
+        (i) =>
+          String(i.productId) === String(productId) &&
+          (i.variantId ? String(i.variantId) : null) === (variantId ? String(variantId) : null)
+      );
 
-      const hydrated = await buildHydratedCart(userId);
-      return res.json({ data: hydrated, message: "Added to cart" });
+      if (existing) {
+        existing.quantity += qty;
+      } else {
+        cart.items.push({
+          _id: new mongoose.Types.ObjectId(),
+          productId,
+          variantId: variantId || null,
+          quantity: qty,
+          attributes: {
+            size: attributes.size || null,
+            color: attributes.color || null,
+            fabric: attributes.fabric || null,
+          },
+        });
+      }
+      await cart.save();
     }
-
-    const idx = cart.items.findIndex(
-      (i) => String(i.productId) === String(allowed._id)
-    );
-
-    if (idx >= 0) cart.items[idx].quantity += qty;
-    else cart.items.push({ productId: allowed._id, quantity: qty });
-
-    await cart.save();
 
     const hydrated = await buildHydratedCart(userId);
     return res.json({ data: hydrated, message: "Added to cart" });
   } catch (err) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-
-/**
- * PATCH /api/cart/item/:productId
- * Body: { quantity }
- * Updates quantity (if quantity <= 0 => remove)
- */
 exports.updateCartItem = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { productId } = req.params;
+    const { itemId } = req.params;
     const { quantity } = req.body;
-
     const q = Number(quantity);
 
     const cart = await Cart.findOne({ userId });
     if (!cart) return res.json({ data: { userId, items: [] } });
 
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ message: "Invalid product id" });
-    }
+    const item = cart.items.id(itemId);
+    if (!item) return res.status(404).json({ message: "Item not found" });
 
-    // if <=0 remove
-    if (!q || q <= 0) {
-      cart.items = cart.items.filter((i) => String(i.productId) !== String(productId));
-      await cart.save();
-      return res.json({ data: cart, message: "Item removed" });
-    }
-
-    // validate product still allowed
-    const allowed = await getAllowedProduct(productId);
-    if (!allowed) {
-      cart.items = cart.items.filter((i) => String(i.productId) !== String(productId));
-      await cart.save();
-      return res.status(400).json({ data: cart, message: "Product not available, removed" });
-    }
-
-    const idx = cart.items.findIndex((i) => String(i.productId) === String(productId));
-    if (idx === -1) {
-      cart.items.push({ productId, quantity: Math.max(1, q) });
+    if (q <= 0) {
+      cart.items.pull(itemId);
     } else {
-      cart.items[idx].quantity = Math.max(1, q);
+      item.quantity = q;
     }
 
     await cart.save();
-    return res.json({ data: cart, message: "Quantity updated" });
+    const hydrated = await buildHydratedCart(userId);
+    return res.json({ data: hydrated, message: "Quantity updated" });
   } catch (err) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-/**
- * DELETE /api/cart/item/:productId
- */
 exports.removeCartItem = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { productId } = req.params;
+    const { itemId } = req.params;
 
     const cart = await Cart.findOne({ userId });
     if (!cart) return res.json({ data: { userId, items: [] } });
 
-    cart.items = cart.items.filter((i) => String(i.productId) !== String(productId));
+    cart.items.pull(itemId);
     await cart.save();
 
-    return res.json({ data: cart, message: "Item removed" });
+    const hydrated = await buildHydratedCart(userId);
+    return res.json({ data: hydrated, message: "Item removed" });
   } catch (err) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-/**
- * DELETE /api/cart
- * Clears cart
- */
 exports.clearCart = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -294,8 +269,9 @@ exports.clearCart = async (req, res) => {
       { new: true, upsert: true }
     ).lean();
 
-    return res.json({ data: cart, message: "Cart cleared" });
+    const hydrated = await buildHydratedCart(userId);
+    return res.json({ data: hydrated, message: "Cart cleared" });
   } catch (err) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    return res.status(500).json({ message: err.message });
   }
 };

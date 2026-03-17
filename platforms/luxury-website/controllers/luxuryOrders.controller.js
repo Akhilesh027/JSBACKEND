@@ -12,7 +12,6 @@ const MIN_PAYABLE_TOTAL = 10;
 const normalizeMethod = (m) => {
   const method = String(m || "").toLowerCase();
   if (["razorpay", "cod"].includes(method)) return method;
-  // if old frontend sends card/upi/netbanking, treat them as cod/demo OR change to razorpay
   if (["card", "upi", "netbanking"].includes(method)) return "cod";
   return "cod";
 };
@@ -46,7 +45,6 @@ const calcDiscount = ({ coupon, cartTotal, shipping }) => {
   return { discount, shippingDiscount };
 };
 
-// ✅ server-truth Razorpay signature verify
 function verifyRazorpaySignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
   if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) return false;
 
@@ -77,7 +75,7 @@ exports.placeOrder = async (req, res) => {
 
       if (!customer) throw new Error("Customer not found");
 
-      // ✅ Resolve shipping address snapshot
+      // Resolve shipping address snapshot
       let shippingAddress = null;
 
       if (addressId) {
@@ -95,7 +93,7 @@ exports.placeOrder = async (req, res) => {
         shippingAddress = def.toObject ? def.toObject() : def;
       }
 
-      // ✅ normalize + validate items (server-side)
+      // ✅ normalize + validate items (server-side) – now includes variantId and attributes
       const cleanItems = items.map((it, idx) => {
         const productId = it.productId || it.product?._id || it.id || null;
         if (!productId || !mongoose.Types.ObjectId.isValid(String(productId))) {
@@ -107,9 +105,11 @@ exports.placeOrder = async (req, res) => {
 
         return {
           productId,
+          variantId: it.variantId || null,                      // ✅ NEW
+          attributes: it.attributes || {},                       // ✅ NEW
           name: String(it.name || ""),
           image: String(it.image || ""),
-          color: String(it.color || ""),
+          color: String(it.color || ""),                         // legacy
           price,
           quantity: qty,
           lineTotal: price * qty,
@@ -117,13 +117,10 @@ exports.placeOrder = async (req, res) => {
       });
 
       const computedSubtotal = cleanItems.reduce((s, it) => s + it.lineTotal, 0);
-
       const computedShippingBase =
         computedSubtotal > 500000 ? 0 : computedSubtotal === 0 ? 0 : 5000;
 
-      // ----------------------------
-      // ✅ COUPON APPLY (optional)
-      // ----------------------------
+      // Coupon handling (unchanged) ...
       let appliedCouponDoc = null;
       let appliedCouponSnapshot = null;
       let discount = 0;
@@ -183,21 +180,16 @@ exports.placeOrder = async (req, res) => {
         );
       }
 
-      // ✅ payment
+      // Payment
       const method = normalizeMethod(payment?.method);
       let payStatus = method === "cod" ? "unpaid" : "pending";
 
-      // ✅ If Razorpay, verify signature here (server-truth) and mark paid
       if (method === "razorpay") {
         const razorpayOrderId = payment?.razorpayOrderId || payment?.razorpay_order_id;
         const razorpayPaymentId = payment?.razorpayPaymentId || payment?.razorpay_payment_id;
         const razorpaySignature = payment?.razorpaySignature || payment?.razorpay_signature;
 
-        const ok = verifyRazorpaySignature({
-          razorpayOrderId,
-          razorpayPaymentId,
-          razorpaySignature,
-        });
+        const ok = verifyRazorpaySignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature });
         if (!ok) throw new Error("Invalid Razorpay payment");
 
         payStatus = "paid";
@@ -205,12 +197,12 @@ exports.placeOrder = async (req, res) => {
 
       const shouldFinalize = method === "cod" || payStatus === "paid";
 
-      // ✅ create order
+      // Create order
       const orderDocs = await LuxuryOrder.create(
         [
           {
             customerId: req.user.id,
-            items: cleanItems,
+            items: cleanItems,                                     // ✅ now includes variantId & attributes
             pricing: {
               subtotal: computedSubtotal,
               discount,
@@ -252,7 +244,6 @@ exports.placeOrder = async (req, res) => {
 
       createdOrder = orderDocs[0];
 
-      // ✅ finalize only when COD OR paid
       if (shouldFinalize) {
         if (appliedCouponDoc) {
           await Coupon.updateOne({ _id: appliedCouponDoc._id }, { $inc: { usedCount: 1 } }, { session });

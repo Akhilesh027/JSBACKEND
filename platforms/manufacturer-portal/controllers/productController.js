@@ -1,3 +1,4 @@
+// controllers/productController.js
 const Category = require("../../Admin/models/category.js");
 const mongoose = require("mongoose");
 const Product = require("../models/Product.js");
@@ -35,7 +36,6 @@ const normalizeArrayField = (value) => {
     return value.map(item => String(item).trim()).filter(Boolean);
   }
   if (typeof value === "string" && value.trim()) {
-    // If it's a comma-separated string (e.g., from legacy input)
     return value.split(",").map(s => s.trim()).filter(Boolean);
   }
   return [];
@@ -131,6 +131,11 @@ exports.createProduct = async (req, res) => {
       galleryImages,
       deliveryTime,
       lowStockThreshold,
+      // NEW FIELDS
+      fabricTypes,
+      extraPillows,
+      hasVariants,
+      variants,
     } = req.body;
 
     if (!name || price === undefined) {
@@ -164,11 +169,6 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    // ✅ Inventory-safe fields
-    const finalQuantity = quantity !== undefined ? parseInt(quantity, 10) : 0;
-    const finalLowStock = lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : 5;
-    const finalAvailability = computeAvailability(finalQuantity, finalLowStock);
-
     // ✅ Resolve category parent/sub properly
     let parentCat, subCat, finalCategorySlug, finalSubSlug;
     try {
@@ -181,47 +181,68 @@ exports.createProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: e.message || "Category invalid" });
     }
 
-    // 👇 Normalise color and size to arrays
+    // 👇 Normalise array fields
     const colorArray = normalizeArrayField(color);
     const sizeArray = normalizeArrayField(size);
+    const fabricArray = Array.isArray(fabricTypes) ? fabricTypes : (fabricTypes ? [fabricTypes] : []);
 
-    const product = await Product.create({
-      // ✅ manufacturer-wise ownership
+    const productData = {
       manufacturer: req.user.id,
-
       name: name.trim(),
-
-      // ✅ store parent slug always
       category: finalCategorySlug,
       subcategory: finalSubSlug || undefined,
-
       categoryId: parentCat._id,
       subCategoryId: subCat?._id || null,
-
       sku: skuClean || undefined,
-
       shortDescription: shortDescription?.trim(),
       description: description?.trim(),
-
       price: parseFloat(price),
-
-      // ✅ inventory
-      quantity: finalQuantity,
-      lowStockThreshold: finalLowStock,
-      availability: finalAvailability,
-
-      color: colorArray,                // ✅ array
+      color: colorArray,
       material: material?.trim(),
-      size: sizeArray,                   // ✅ array
+      size: sizeArray,
       weight: weight?.trim(),
       location: location?.trim(),
       deliveryTime: deliveryTime?.trim(),
-
       image: mainImage || "https://via.placeholder.com/300x300?text=No+Image",
       galleryImages: galleryArr,
-    });
+      fabricTypes: fabricArray,
+      extraPillows: extraPillows !== undefined ? parseInt(extraPillows, 10) : 0,
+      hasVariants: !!hasVariants,
+    };
 
-    // productCount increment (safe)
+    if (hasVariants && Array.isArray(variants) && variants.length > 0) {
+      // Validate each variant
+      for (let v of variants) {
+        if (!v.sku || !v.sku.trim()) {
+          return res.status(400).json({ success: false, message: "Each variant must have an SKU" });
+        }
+        if (v.price === undefined || v.price < 0) {
+          return res.status(400).json({ success: false, message: "Each variant must have a valid price" });
+        }
+        if (v.quantity === undefined || v.quantity < 0) {
+          return res.status(400).json({ success: false, message: "Each variant must have a valid quantity" });
+        }
+      }
+      productData.variants = variants;
+      // For variant products, top-level quantity/availability are derived from variants; we can set them to sum
+      const totalQty = variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
+      const anyLow = variants.some(v => v.quantity <= (v.lowStockThreshold || 5));
+      productData.quantity = totalQty;
+      productData.availability = totalQty <= 0 ? "Out of Stock" : (anyLow ? "Low Stock" : "In Stock");
+      productData.lowStockThreshold = 5; // default, not used for variants
+    } else {
+      // Simple product
+      const finalQuantity = quantity !== undefined ? parseInt(quantity, 10) : 0;
+      const finalLowStock = lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : 5;
+      productData.quantity = finalQuantity;
+      productData.lowStockThreshold = finalLowStock;
+      productData.availability = computeAvailability(finalQuantity, finalLowStock);
+      productData.hasVariants = false;
+    }
+
+    const product = await Product.create(productData);
+
+    // Increment productCount
     try {
       if (subCat?._id) await Category.findByIdAndUpdate(subCat._id, { $inc: { productCount: 1 } });
       else await Category.findByIdAndUpdate(parentCat._id, { $inc: { productCount: 1 } });
@@ -286,7 +307,7 @@ exports.getProduct = async (req, res) => {
 };
 
 /** -----------------------------
- * UPDATE PRODUCT (inventory-safe + category-safe)
+ * UPDATE PRODUCT (inventory-safe + category-safe + variant support)
  * ---------------------------- */
 exports.updateProduct = async (req, res) => {
   try {
@@ -315,6 +336,10 @@ exports.updateProduct = async (req, res) => {
       galleryImages,
       deliveryTime,
       lowStockThreshold,
+      fabricTypes,
+      extraPillows,
+      hasVariants,
+      variants,
     } = req.body;
 
     if (price !== undefined && Number(price) <= 0) {
@@ -389,16 +414,7 @@ exports.updateProduct = async (req, res) => {
       }
     }
 
-    // ✅ Inventory-safe recalculation
-    const nextQty = quantity !== undefined ? parseInt(quantity, 10) : existing.quantity;
-    const nextLowStock =
-      lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : (existing.lowStockThreshold || 5);
-    const nextAvailability = computeAvailability(nextQty, nextLowStock);
-
-    // 👇 Normalise color and size (if provided, otherwise keep existing)
-    const colorArray = color !== undefined ? normalizeArrayField(color) : existing.color;
-    const sizeArray = size !== undefined ? normalizeArrayField(size) : existing.size;
-
+    // Handle variant vs simple product logic
     const updateData = {
       ...(name !== undefined && { name: name.trim() }),
       ...(sku !== undefined && { sku: sku.trim() || undefined }),
@@ -406,27 +422,72 @@ exports.updateProduct = async (req, res) => {
       ...(description !== undefined && { description: description?.trim() }),
       ...(price !== undefined && { price: parseFloat(price) }),
 
-      // ✅ categories (kept consistent)
+      // categories
       category: finalCategorySlug,
       subcategory: finalSubSlug || undefined,
       categoryId: finalCategoryId,
       subCategoryId: finalSubId,
 
-      // ✅ inventory (always consistent)
-      quantity: nextQty,
-      lowStockThreshold: nextLowStock,
-      availability: nextAvailability,
-
-      color: colorArray,                // ✅ array
+      // color, size, fabric, etc.
+      ...(color !== undefined && { color: normalizeArrayField(color) }),
       ...(material !== undefined && { material: material?.trim() }),
-      size: sizeArray,                   // ✅ array
+      ...(size !== undefined && { size: normalizeArrayField(size) }),
       ...(weight !== undefined && { weight: weight?.trim() }),
       ...(location !== undefined && { location: location?.trim() }),
       ...(deliveryTime !== undefined && { deliveryTime: deliveryTime?.trim() }),
 
+      ...(fabricTypes !== undefined && { fabricTypes: Array.isArray(fabricTypes) ? fabricTypes : (fabricTypes ? [fabricTypes] : []) }),
+      ...(extraPillows !== undefined && { extraPillows: parseInt(extraPillows, 10) || 0 }),
+
       ...(image !== undefined && { image: nextMainImage }),
       ...(galleryImages !== undefined && { galleryImages: nextGallery }),
+
+      hasVariants: hasVariants !== undefined ? !!hasVariants : existing.hasVariants,
     };
+
+    const newHasVariants = updateData.hasVariants ?? existing.hasVariants;
+
+    if (newHasVariants) {
+      // Variant product
+      if (variants !== undefined) {
+        if (!Array.isArray(variants) || variants.length === 0) {
+          return res.status(400).json({ success: false, message: "Variants array must not be empty when hasVariants is true" });
+        }
+        // Validate each variant
+        for (let v of variants) {
+          if (!v.sku || !v.sku.trim()) {
+            return res.status(400).json({ success: false, message: "Each variant must have an SKU" });
+          }
+          if (v.price === undefined || v.price < 0) {
+            return res.status(400).json({ success: false, message: "Each variant must have a valid price" });
+          }
+          if (v.quantity === undefined || v.quantity < 0) {
+            return res.status(400).json({ success: false, message: "Each variant must have a valid quantity" });
+          }
+        }
+        updateData.variants = variants;
+        // Recompute total quantity and availability from variants
+        const totalQty = variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
+        const anyLow = variants.some(v => v.quantity <= (v.lowStockThreshold || 5));
+        updateData.quantity = totalQty;
+        updateData.availability = totalQty <= 0 ? "Out of Stock" : (anyLow ? "Low Stock" : "In Stock");
+        updateData.lowStockThreshold = 5; // not used for variants
+      } else {
+        // variants not provided, keep existing variants; still need to recalc availability if quantity changed? Actually if variants unchanged, no need.
+        // But we might want to recalc availability based on existing variants if other fields changed? Unlikely.
+      }
+    } else {
+      // Simple product
+      const finalQuantity = quantity !== undefined ? parseInt(quantity, 10) : existing.quantity;
+      const finalLowStock = lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : (existing.lowStockThreshold || 5);
+      updateData.quantity = finalQuantity;
+      updateData.lowStockThreshold = finalLowStock;
+      updateData.availability = computeAvailability(finalQuantity, finalLowStock);
+      // If switching from variant to simple, clear variants
+      if (existing.hasVariants) {
+        updateData.variants = [];
+      }
+    }
 
     const product = await Product.findOneAndUpdate(
       { _id: req.params.id, manufacturer: req.user.id },
@@ -497,6 +558,11 @@ exports.updateInventory = async (req, res) => {
 
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found or access denied" });
+    }
+
+    // Only allow quick inventory update for simple products (non‑variant)
+    if (product.hasVariants) {
+      return res.status(400).json({ success: false, message: "Cannot update inventory for variant products via this endpoint. Use full edit." });
     }
 
     const nextQty = parseInt(quantity, 10);

@@ -1,4 +1,5 @@
 const Cart = require("../models/Cart");
+const mongoose = require("mongoose");
 
 const calcTotals = (items = []) => {
   const totalItems = items.reduce((sum, i) => sum + (i.quantity || 0), 0);
@@ -9,8 +10,7 @@ const calcTotals = (items = []) => {
   return { totalItems, subtotal };
 };
 
-// GET /api/cart/:userId
-
+// GET /api/cart/affordable/:userId
 exports.getCart = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -24,10 +24,17 @@ exports.getCart = async (req, res) => {
   }
 };
 
-// POST /api/cart/add
+// POST /api/cart/affordable/add
 exports.addToCart = async (req, res) => {
   try {
-    const { userId, productId, quantity = 1, productSnapshot } = req.body;
+    const {
+      userId,
+      productId,
+      variantId = null,
+      quantity = 1,
+      attributes = {},
+      productSnapshot,
+    } = req.body;
 
     if (!userId) return res.status(400).json({ error: "userId is required" });
     if (!productId) return res.status(400).json({ error: "productId is required" });
@@ -36,16 +43,30 @@ exports.addToCart = async (req, res) => {
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = await Cart.create({ userId, items: [] });
 
-    const idx = cart.items.findIndex((i) => String(i.productId) === String(productId));
+    // Find existing item with same productId AND same variantId (both null for simple products)
+    const existingItem = cart.items.find(
+      (i) =>
+        String(i.productId) === String(productId) &&
+        (i.variantId ? String(i.variantId) : null) === (variantId ? String(variantId) : null)
+    );
 
-    if (idx >= 0) {
-      cart.items[idx].quantity += Number(quantity);
-      // keep snapshot fresh if provided
-      if (productSnapshot) cart.items[idx].productSnapshot = productSnapshot;
+    if (existingItem) {
+      // Update quantity
+      existingItem.quantity += Number(quantity);
+      // Optionally refresh snapshot if provided
+      if (productSnapshot) existingItem.productSnapshot = productSnapshot;
     } else {
+      // Create new item with a fresh _id
       cart.items.push({
+        _id: new mongoose.Types.ObjectId(),
         productId,
+        variantId: variantId || null,
         quantity: Number(quantity),
+        attributes: {
+          size: attributes.size || null,
+          color: attributes.color || null,
+          fabric: attributes.fabric || null,
+        },
         productSnapshot: productSnapshot || {},
       });
     }
@@ -59,29 +80,27 @@ exports.addToCart = async (req, res) => {
   }
 };
 
-// PUT /api/cart/update/:userId/:productId/:quantity
+// PUT /api/cart/affordable/update/:userId/:itemId/:quantity
 exports.updateQuantity = async (req, res) => {
   try {
-    const { userId, productId, quantity } = req.params;
+    const { userId, itemId, quantity } = req.params;
     const q = Number(quantity);
 
     if (!userId) return res.status(400).json({ error: "userId is required" });
-    if (!productId) return res.status(400).json({ error: "productId is required" });
+    if (!itemId) return res.status(400).json({ error: "itemId is required" });
 
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = await Cart.create({ userId, items: [] });
 
+    const item = cart.items.id(itemId);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
     if (q < 1) {
-      cart.items = cart.items.filter((i) => String(i.productId) !== String(productId));
-      await cart.save();
-      const totals = calcTotals(cart.items);
-      return res.json({ message: "Removed (qty < 1)", items: cart.items, ...totals });
+      // Remove item
+      cart.items.pull(itemId);
+    } else {
+      item.quantity = q;
     }
-
-    const idx = cart.items.findIndex((i) => String(i.productId) === String(productId));
-    if (idx === -1) return res.status(404).json({ error: "Item not found in cart" });
-
-    cart.items[idx].quantity = q;
 
     await cart.save();
     const totals = calcTotals(cart.items);
@@ -91,15 +110,15 @@ exports.updateQuantity = async (req, res) => {
   }
 };
 
-// DELETE /api/cart/remove/:userId/:productId
+// DELETE /api/cart/affordable/remove/:userId/:itemId
 exports.removeItem = async (req, res) => {
   try {
-    const { userId, productId } = req.params;
+    const { userId, itemId } = req.params;
 
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = await Cart.create({ userId, items: [] });
 
-    cart.items = cart.items.filter((i) => String(i.productId) !== String(productId));
+    cart.items.pull(itemId);
 
     await cart.save();
     const totals = calcTotals(cart.items);
@@ -110,7 +129,7 @@ exports.removeItem = async (req, res) => {
   }
 };
 
-// DELETE /api/cart/clear/:userId
+// DELETE /api/cart/affordable/clear/:userId
 exports.clearCart = async (req, res) => {
   try {
     const { userId } = req.params;

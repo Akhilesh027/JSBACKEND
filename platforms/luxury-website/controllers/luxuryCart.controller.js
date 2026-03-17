@@ -1,19 +1,47 @@
-// server/controllers/luxuryCart.controller.js
+// controllers/luxuryCart.controller.js
 const mongoose = require("mongoose");
 const LuxuryCart = require("../models/LuxuryCart.js");
 
+// Helper: normalise incoming items to match server schema
 const normalizeItems = (items = []) =>
   items
     .filter(Boolean)
     .map((it) => ({
-      productId: it.id,
+      productId: it.productId, // must be product _id
+      variantId: it.variantId || null,
+      attributes: {
+        size: it.attributes?.size || null,
+        color: it.attributes?.color || null,
+        fabric: it.attributes?.fabric || null,
+      },
       name: it.name,
       price: Number(it.price || 0),
       image: it.image || "",
-      color: it.color || "",
       quantity: Math.max(1, Number(it.quantity || 1)),
     }))
     .filter((it) => mongoose.Types.ObjectId.isValid(it.productId));
+
+// Helper: generate a unique key for merging (productId + variantId + attributes)
+const itemKey = (it) => {
+  const base = String(it.productId);
+  const variant = it.variantId ? String(it.variantId) : 'null';
+  const color = it.attributes?.color || 'null';
+  const size = it.attributes?.size || 'null';
+  const fabric = it.attributes?.fabric || 'null';
+  return `${base}::${variant}::${color}::${size}::${fabric}`;
+};
+
+// Helper: map server item to frontend shape
+const toFrontendItem = (it) => ({
+  _id: String(it._id),
+  id: String(it.productId),
+  variantId: it.variantId ? String(it.variantId) : null,
+  attributes: it.attributes,
+  name: it.name,
+  price: it.price,
+  image: it.image,
+  quantity: it.quantity,
+});
 
 exports.getCart = async (req, res) => {
   try {
@@ -22,15 +50,7 @@ exports.getCart = async (req, res) => {
     let cart = await LuxuryCart.findOne({ customerId });
     if (!cart) cart = await LuxuryCart.create({ customerId, items: [] });
 
-    // return in frontend shape
-    const items = cart.items.map((it) => ({
-      id: String(it.productId),
-      name: it.name,
-      price: it.price,
-      image: it.image,
-      color: it.color,
-      quantity: it.quantity,
-    }));
+    const items = cart.items.map(toFrontendItem);
 
     res.json({ success: true, items });
   } catch (e) {
@@ -42,24 +62,18 @@ exports.getCart = async (req, res) => {
 exports.updateCart = async (req, res) => {
   try {
     const customerId = req.user.id;
-    const items = normalizeItems(req.body?.items || []);
+    const incoming = normalizeItems(req.body?.items || []);
 
+    // Replace entire cart
     const cart = await LuxuryCart.findOneAndUpdate(
       { customerId },
-      { $set: { items } },
+      { $set: { items: incoming.map(it => ({ ...it, _id: new mongoose.Types.ObjectId() })) } },
       { upsert: true, new: true }
     );
 
-    const out = cart.items.map((it) => ({
-      id: String(it.productId),
-      name: it.name,
-      price: it.price,
-      image: it.image,
-      color: it.color,
-      quantity: it.quantity,
-    }));
+    const items = cart.items.map(toFrontendItem);
 
-    res.json({ success: true, items: out });
+    res.json({ success: true, items });
   } catch (e) {
     console.error("updateCart error:", e);
     res.status(500).json({ success: false, message: "Failed to update cart" });
@@ -74,43 +88,90 @@ exports.mergeCart = async (req, res) => {
     let cart = await LuxuryCart.findOne({ customerId });
     if (!cart) cart = await LuxuryCart.create({ customerId, items: [] });
 
-    // merge by productId + color
-    const map = new Map();
+    // Merge by composite key (productId + variantId + attributes)
+    const mergedMap = new Map();
     for (const it of cart.items) {
-      map.set(`${String(it.productId)}::${it.color || ""}`, { ...it.toObject() });
+      mergedMap.set(itemKey(it), it);
     }
 
     for (const it of incoming) {
-      const key = `${String(it.productId)}::${it.color || ""}`;
-      if (map.has(key)) {
-        map.get(key).quantity += it.quantity;
+      const key = itemKey(it);
+      if (mergedMap.has(key)) {
+        mergedMap.get(key).quantity += it.quantity;
       } else {
-        map.set(key, {
-          productId: it.productId,
-          name: it.name,
-          price: it.price,
-          image: it.image,
-          color: it.color,
-          quantity: it.quantity,
-        });
+        mergedMap.set(key, { ...it, _id: new mongoose.Types.ObjectId() });
       }
     }
 
-    cart.items = Array.from(map.values());
+    cart.items = Array.from(mergedMap.values());
     await cart.save();
 
-    const out = cart.items.map((it) => ({
-      id: String(it.productId),
-      name: it.name,
-      price: it.price,
-      image: it.image,
-      color: it.color,
-      quantity: it.quantity,
-    }));
+    const items = cart.items.map(toFrontendItem);
 
-    res.json({ success: true, items: out });
+    res.json({ success: true, items });
   } catch (e) {
     console.error("mergeCart error:", e);
     res.status(500).json({ success: false, message: "Failed to merge cart" });
+  }
+};
+
+// Optional: Update a single cart item by its _id
+exports.updateCartItem = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    const { itemId } = req.params;
+    const { quantity } = req.body;
+
+    const q = Number(quantity);
+    if (isNaN(q) || q < 0) {
+      return res.status(400).json({ success: false, message: "Invalid quantity" });
+    }
+
+    const cart = await LuxuryCart.findOne({ customerId });
+    if (!cart) {
+      return res.status(404).json({ success: false, message: "Cart not found" });
+    }
+
+    const item = cart.items.id(itemId);
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Item not found" });
+    }
+
+    if (q === 0) {
+      // Remove item
+      cart.items.pull(itemId);
+    } else {
+      item.quantity = q;
+    }
+
+    await cart.save();
+
+    const items = cart.items.map(toFrontendItem);
+    res.json({ success: true, items });
+  } catch (e) {
+    console.error("updateCartItem error:", e);
+    res.status(500).json({ success: false, message: "Failed to update item" });
+  }
+};
+
+// Optional: Remove an item by its _id
+exports.removeCartItem = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    const { itemId } = req.params;
+
+    const cart = await LuxuryCart.findOne({ customerId });
+    if (!cart) {
+      return res.status(404).json({ success: false, message: "Cart not found" });
+    }
+
+    cart.items.pull(itemId);
+    await cart.save();
+
+    const items = cart.items.map(toFrontendItem);
+    res.json({ success: true, items });
+  } catch (e) {
+    console.error("removeCartItem error:", e);
+    res.status(500).json({ success: false, message: "Failed to remove item" });
   }
 };

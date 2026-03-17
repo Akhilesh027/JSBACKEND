@@ -1,3 +1,4 @@
+// models/MidrangeOrder.js
 const mongoose = require("mongoose");
 
 const statusHistoryEntrySchema = new mongoose.Schema({
@@ -5,7 +6,7 @@ const statusHistoryEntrySchema = new mongoose.Schema({
   changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   changedAt: { type: Date, default: Date.now },
   note: { type: String, default: "" },
-}, { _id: false }); // or keep _id if you prefer
+}, { _id: false });
 
 const midrangeOrderSchema = new mongoose.Schema(
   {
@@ -18,13 +19,19 @@ const midrangeOrderSchema = new mongoose.Schema(
 
     website: {
       type: String,
-      enum: ["affordable", "midrange", "luxury","mid_range"], // changed from "mid_range"
+      enum: ["affordable", "midrange", "luxury", "mid_range"],
       default: "midrange",
       index: true,
     },
 
     items: [{
       productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+      variantId: { type: mongoose.Schema.Types.ObjectId, ref: "Product.variants", default: null }, // NEW
+      attributes: {                                                               // NEW
+        size: { type: String, default: null },
+        color: { type: String, default: null },
+        fabric: { type: String, default: null },
+      },
       name: { type: String, default: "" },
       image: { type: String, default: "" },
       quantity: { type: Number, required: true, min: 1 },
@@ -73,7 +80,6 @@ const midrangeOrderSchema = new mongoose.Schema(
       transactionId: { type: String, default: "" },
     },
 
-    // ----- Status fields -----
     status: {
       type: String,
       enum: [
@@ -85,14 +91,12 @@ const midrangeOrderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Reason fields
     rejectionReason: { type: String, default: "" },
     cancelReason: { type: String, default: "" },
 
-    // Status history
     statusHistory: [statusHistoryEntrySchema],
 
-    // Timestamps for each status change (set by controller)
+    // Timestamps for each status change
     approvedAt: Date,
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     confirmedAt: Date,

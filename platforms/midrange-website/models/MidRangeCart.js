@@ -1,13 +1,17 @@
-// models/MidRangeCart.js
 const mongoose = require("mongoose");
 
 const midRangeCartItemSchema = new mongoose.Schema(
   {
+    _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
     productId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
       index: true,
+    },
+    variantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
     },
     quantity: {
       type: Number,
@@ -15,22 +19,24 @@ const midRangeCartItemSchema = new mongoose.Schema(
       min: 1,
       default: 1,
     },
+    attributes: {
+      size: { type: String, default: null },
+      color: { type: String, default: null },
+      fabric: { type: String, default: null },
+    },
   },
   { _id: false }
 );
 
 const midRangeCartSchema = new mongoose.Schema(
   {
-    // ✅ user owning this cart
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "midrange_customers", // change if your user model name differs
+      ref: "midrange_customers",
       required: true,
       unique: true,
       index: true,
     },
-
-    // ✅ fixed tier (important)
     tier: {
       type: String,
       enum: ["mid_range"],
@@ -38,19 +44,14 @@ const midRangeCartSchema = new mongoose.Schema(
       immutable: true,
       index: true,
     },
-
-    // ✅ cart items
     items: {
       type: [midRangeCartItemSchema],
       default: [],
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Helpful compound index
 midRangeCartSchema.index({ userId: 1, tier: 1 });
 
 module.exports = mongoose.model("MidRangeCart", midRangeCartSchema);
