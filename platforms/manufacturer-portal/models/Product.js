@@ -1,17 +1,16 @@
-// models/Product.js – updated schema with variants
 const mongoose = require('mongoose');
 
 const variantSchema = new mongoose.Schema({
   attributes: {
     size: { type: String, trim: true },
-    color: { type: String, trim: true },          // hex or name
+    color: { type: String, trim: true },
     fabric: { type: String, trim: true },
   },
   sku: { type: String, required: true, trim: true, uppercase: true },
   price: { type: Number, required: true, min: 0 },
   quantity: { type: Number, default: 0, min: 0 },
   lowStockThreshold: { type: Number, default: 5 },
-  image: { type: String, trim: true },             // optional variant image
+  image: { type: String, trim: true },
 });
 
 const productSchema = new mongoose.Schema(
@@ -25,9 +24,10 @@ const productSchema = new mongoose.Schema(
     sku: { type: String, unique: true, sparse: true, index: true, trim: true, uppercase: true },
     shortDescription: { type: String, maxlength: 150, trim: true },
     description: { type: String, trim: true },
-    price: { type: Number, required: true, min: 0 }, // base price (for simple products or fallback)
-    quantity: { type: Number, default: 0, min: 0 },   // only for simple products
-    lowStockThreshold: { type: Number, default: 5 },  // only for simple products
+    price: { type: Number, required: true, min: 0 },
+    discount: { type: Number, default: 0, min: 0, max: 100 },      // NEW: discount percentage
+    quantity: { type: Number, default: 0, min: 0 },
+    lowStockThreshold: { type: Number, default: 5 },
     availability: {
       type: String,
       enum: ['In Stock', 'Low Stock', 'Out of Stock'],
@@ -40,15 +40,13 @@ const productSchema = new mongoose.Schema(
     forwardedAt: { type: Date },
     deliveryTime: { type: String, trim: true },
 
-    // 👇 arrays for simple attributes
     color: { type: [String], default: [] },
     material: { type: String, trim: true },
     size: { type: [String], default: [] },
     weight: { type: String, trim: true },
     location: { type: String, trim: true },
 
-    // NEW fields
-    fabricTypes: { type: [String], default: [] },   // e.g., ["cotton","polyester"]
+    fabricTypes: { type: [String], default: [] },
     extraPillows: { type: Number, default: 0, min: 0 },
 
     image: { type: String, required: true, trim: true },
@@ -63,12 +61,12 @@ const productSchema = new mongoose.Schema(
       ],
     },
 
-    // VARIANTS
     hasVariants: { type: Boolean, default: false, index: true },
     variants: [variantSchema],
   },
   { timestamps: true }
 );
+
 
 // Auto SKU generation (only for simple products; variants have their own SKUs)
 productSchema.pre('save', async function (next) {

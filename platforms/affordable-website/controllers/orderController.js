@@ -1,11 +1,13 @@
 // controllers/affordableOrderController.js
 const mongoose = require("mongoose");
+const axios = require("axios");
 const Order = require("../models/AffordableOrder");
 const Address = require("../models/AffordableAddress");
 const Customer = require("../models/affordable_customers");
 const Coupon = require("../../Admin/models/Coupon");
 const CouponUsage = require("../../Admin/models/CouponUsage");
-
+const crypto = require("crypto");
+const aws4 = require("aws4");
 const safeName = (u) =>
   (u?.fullName || u?.name || `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || "").trim();
 
@@ -60,6 +62,90 @@ function computeCouponDiscount({ coupon, subtotal, shipping }) {
   return { discount, shippingDiscount };
 }
 
+function formatPhoneNumber(phone) {
+  if (!phone) return null;
+  let cleaned = phone.trim().replace(/\D/g, "");
+  if (cleaned.length === 10) {
+    return `+91${cleaned}`;
+  } else if (cleaned.length === 12 && cleaned.startsWith("91")) {
+    return `+${cleaned}`;
+  } else if (cleaned.length > 10 && cleaned.startsWith("0")) {
+    return `+91${cleaned.substring(1)}`;
+  } else if (cleaned.startsWith("+")) {
+    return cleaned;
+  } else {
+    return `+${cleaned}`;
+  }
+}
+async function sendWhatsAppMessage(to, body) {
+  try {
+    const apiUrl = "https://publicapi.myoperator.co/v1/whatsapp/send";
+
+    const apiKey = process.env.WHATSAPP_API_KEY;
+    const secretKey = process.env.WHATSAPP_SECRET_KEY;
+    const companyId = process.env.WHATSAPP_COMPANY_ID;
+
+    if (!apiKey || !secretKey || !companyId) {
+      console.error("❌ Missing WhatsApp env config");
+      return;
+    }
+
+    // ✅ format phone (NO +)
+    const phone = to.replace("+", "");
+
+    const payload = {
+      to: phone,
+      text: body,
+      company_id: companyId,
+    };
+
+    const payloadString = JSON.stringify(payload);
+
+    // ✅ IMPORTANT: correct host & path
+    const opts = {
+      host: "publicapi.myoperator.co",
+      path: "/v1/whatsapp/send",
+      service: "execute-api",
+      region: "ap-south-1",
+      method: "POST",
+      body: payloadString,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "Content-Length": Buffer.byteLength(payloadString),
+      },
+    };
+
+    // ✅ SIGN REQUEST (CRITICAL)
+    aws4.sign(opts, {
+      accessKeyId: apiKey,
+      secretAccessKey: secretKey,
+    });
+
+    console.log("[DEBUG] Final Headers:", opts.headers);
+
+    // ✅ SEND REQUEST USING SIGNED HEADERS
+    const response = await axios({
+      method: "POST",
+      url: apiUrl,
+      data: payloadString,
+      headers: opts.headers,
+    });
+
+    console.log("✅ WhatsApp Sent:", response.data);
+    return response.data;
+
+  } catch (err) {
+    console.error(
+      "❌ WhatsApp Error:",
+      err.response?.data || err.message
+    );
+    throw err;
+  }
+}
+
+// -------------------- Main Controller --------------------
+
 exports.createOrder = async (req, res) => {
   const session = await mongoose.startSession();
   try {
@@ -80,7 +166,6 @@ exports.createOrder = async (req, res) => {
     }
 
     let serverSubtotal = 0;
-
     const normalizedItems = items.map((it) => {
       const qty = Math.max(1, Number(it.quantity || 1));
       const snapPrice = Number(it?.productSnapshot?.price ?? it?.price ?? 0);
@@ -90,18 +175,17 @@ exports.createOrder = async (req, res) => {
 
       const price = clampMoney(snapPrice);
       const finalPrice = price;
-
       serverSubtotal += price * qty;
 
       return {
         productId: it.productId,
-        variantId: it.variantId || null,                       // ✅ NEW
+        variantId: it.variantId || null,
         quantity: qty,
         price,
         discountPercent: Number(it.discountPercent || 0),
         discountAmount: clampMoney(it.discountAmount || 0),
         finalPrice: clampMoney(it.finalPrice ?? finalPrice),
-        attributes: {                                           // ✅ NEW
+        attributes: {
           size: it.attributes?.size || null,
           color: it.attributes?.color || null,
           fabric: it.attributes?.fabric || null,
@@ -119,7 +203,6 @@ exports.createOrder = async (req, res) => {
     });
 
     serverSubtotal = clampMoney(serverSubtotal);
-
     const serverShipping = calcShipping(serverSubtotal, pricing?.shippingCost);
 
     let appliedCoupon = null;
@@ -207,7 +290,7 @@ exports.createOrder = async (req, res) => {
           {
             userId,
             addressId,
-            items: normalizedItems,               // ✅ now includes variantId & attributes
+            items: normalizedItems,
             coupon: appliedCoupon
               ? {
                   couponId: appliedCoupon._id,
@@ -259,8 +342,61 @@ exports.createOrder = async (req, res) => {
       );
     });
 
+    // ---------- WhatsApp notification with fallback ----------
+    console.log("[DEBUG] Entering WhatsApp notification block");
+
+    try {
+      // Fetch full customer data to inspect all fields
+      const customer = await Customer.findById(userId).lean();
+      console.log("[DEBUG] Full customer data:", customer);
+
+      let phone = null;
+
+      // Try to get phone from customer first
+      if (customer?.phone) {
+        phone = customer.phone;
+        console.log("[DEBUG] Found phone in customer:", phone);
+      } else if (customer?.mobile) {
+        phone = customer.mobile;
+        console.log("[DEBUG] Found mobile in customer:", phone);
+      } else if (customer?.phoneNumber) {
+        phone = customer.phoneNumber;
+        console.log("[DEBUG] Found phoneNumber in customer:", phone);
+      }
+
+      // If still no phone, try to get it from the address
+      if (!phone && address) {
+        if (address.phone) {
+          phone = address.phone;
+          console.log("[DEBUG] Found phone in address:", phone);
+        } else if (address.mobile) {
+          phone = address.mobile;
+          console.log("[DEBUG] Found mobile in address:", phone);
+        }
+      }
+
+      if (phone) {
+        const formattedPhone = formatPhoneNumber(phone);
+        console.log("[DEBUG] Formatted phone number:", formattedPhone);
+
+        if (formattedPhone) {
+          const message = `🎉 Thank you for your order!\n\nOrder ID: ${createdOrder._id}\nTotal: ₹${finalTotal}\nWe'll notify you once it ships.\n\n- Affordable Team`;
+          console.log("[DEBUG] Sending message to:", formattedPhone);
+          await sendWhatsAppMessage(formattedPhone, message);
+          console.log("[DEBUG] Message sent successfully");
+        } else {
+          console.log("[DEBUG] Phone number formatting returned null");
+        }
+      } else {
+        console.log("[DEBUG] No phone found in customer or address");
+      }
+    } catch (waError) {
+      console.error("[DEBUG] WhatsApp notification failed:", waError.message);
+    }
+
     return res.status(201).json({ data: createdOrder });
   } catch (err) {
+    console.error("[DEBUG] Order creation error:", err);
     return res.status(500).json({ message: err.message || "Failed to create order" });
   } finally {
     session.endSession();
@@ -313,4 +449,4 @@ exports.getOrdersByUser = async (req, res) => {
   } catch (err) {
     return res.status(500).json({ message: err.message || "Failed to fetch orders" });
   }
-}; 
+};

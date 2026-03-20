@@ -9,7 +9,6 @@ exports.getAllCatalogs = async (req, res) => {
 
     const catalogs = products.map((p) => {
       const m = p.manufacturer;
-
       const manufacturerName =
         m?.fullName ||
         `${m?.firstName || ""} ${m?.lastName || ""}`.trim() ||
@@ -27,6 +26,7 @@ exports.getAllCatalogs = async (req, res) => {
         shortDescription: p.shortDescription || "",
         description: p.description || "",
         price: p.price,
+        discount: p.discount || 0,                     // NEW
 
         deliveryTime: p.deliveryTime || "",
         tier: p.tier || "mid_range",
@@ -50,7 +50,7 @@ exports.getAllCatalogs = async (req, res) => {
 // PATCH /api/admin/catalogs/:id/status  body: { status: "approved" | "rejected" | "pending" }
 exports.updateCatalogStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, discount } = req.body;                     // added discount
 
     if (!["pending", "approved", "rejected"].includes(status)) {
       return res.status(400).json({
@@ -59,9 +59,22 @@ exports.updateCatalogStatus = async (req, res) => {
       });
     }
 
+    // Validate discount if provided
+    if (discount !== undefined && (typeof discount !== 'number' || discount < 0 || discount > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: "Discount must be a number between 0 and 100",
+      });
+    }
+
+    const updateData = { status };
+    if (discount !== undefined && status === "approved") {
+      updateData.discount = discount;
+    }
+
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      { status },
+      updateData,
       { new: true }
     ).populate("manufacturer", "fullName firstName lastName email company");
 
@@ -89,6 +102,7 @@ exports.updateCatalogStatus = async (req, res) => {
         shortDescription: product.shortDescription || "",
         description: product.description || "",
         price: product.price,
+        discount: product.discount || 0,                     // NEW
         deliveryTime: product.deliveryTime || "",
         tier: product.tier || "mid_range",
         status: product.status,
@@ -115,6 +129,7 @@ exports.updateCatalog = async (req, res) => {
       description,
       tier,
       deliveryTime,
+      discount,                     // NEW
     } = req.body;
 
     if (!productName || !category || price === undefined) {
@@ -138,6 +153,14 @@ exports.updateCatalog = async (req, res) => {
       });
     }
 
+    // Validate discount if provided
+    if (discount !== undefined && (typeof discount !== 'number' || discount < 0 || discount > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: "Discount must be a number between 0 and 100",
+      });
+    }
+
     const updateData = {
       name: String(productName).trim(),
       category: String(category).trim(),
@@ -146,6 +169,7 @@ exports.updateCatalog = async (req, res) => {
       description: description ? String(description).trim() : "",
       ...(tier ? { tier } : {}),
       ...(deliveryTime !== undefined ? { deliveryTime: String(deliveryTime).trim() } : {}),
+      ...(discount !== undefined ? { discount } : {}),       // NEW
     };
 
     const product = await Product.findByIdAndUpdate(req.params.id, updateData, {
@@ -177,6 +201,7 @@ exports.updateCatalog = async (req, res) => {
         shortDescription: product.shortDescription || "",
         description: product.description || "",
         price: product.price,
+        discount: product.discount || 0,                     // NEW
         deliveryTime: product.deliveryTime || "",
         tier: product.tier || "mid_range",
         status: product.status || "pending",
