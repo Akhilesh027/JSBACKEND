@@ -6,8 +6,7 @@ const Address = require("../models/AffordableAddress");
 const Customer = require("../models/affordable_customers");
 const Coupon = require("../../Admin/models/Coupon");
 const CouponUsage = require("../../Admin/models/CouponUsage");
-const crypto = require("crypto");
-const aws4 = require("aws4");
+
 const safeName = (u) =>
   (u?.fullName || u?.name || `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || "").trim();
 
@@ -77,20 +76,19 @@ function formatPhoneNumber(phone) {
     return `+${cleaned}`;
   }
 }
+
 async function sendWhatsAppMessage(to, body) {
   try {
     const apiUrl = "https://publicapi.myoperator.co/v1/whatsapp/send";
-
     const apiKey = process.env.WHATSAPP_API_KEY;
-    const secretKey = process.env.WHATSAPP_SECRET_KEY;
     const companyId = process.env.WHATSAPP_COMPANY_ID;
 
-    if (!apiKey || !secretKey || !companyId) {
+    if (!apiKey || !companyId) {
       console.error("❌ Missing WhatsApp env config");
       return;
     }
 
-    // ✅ format phone (NO +)
+    // Format phone number (remove '+')
     const phone = to.replace("+", "");
 
     const payload = {
@@ -99,47 +97,17 @@ async function sendWhatsAppMessage(to, body) {
       company_id: companyId,
     };
 
-    const payloadString = JSON.stringify(payload);
-
-    // ✅ IMPORTANT: correct host & path
-    const opts = {
-      host: "publicapi.myoperator.co",
-      path: "/v1/whatsapp/send",
-      service: "execute-api",
-      region: "ap-south-1",
-      method: "POST",
-      body: payloadString,
+    const response = await axios.post(apiUrl, payload, {
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
-        "Content-Length": Buffer.byteLength(payloadString),
       },
-    };
-
-    // ✅ SIGN REQUEST (CRITICAL)
-    aws4.sign(opts, {
-      accessKeyId: apiKey,
-      secretAccessKey: secretKey,
-    });
-
-    console.log("[DEBUG] Final Headers:", opts.headers);
-
-    // ✅ SEND REQUEST USING SIGNED HEADERS
-    const response = await axios({
-      method: "POST",
-      url: apiUrl,
-      data: payloadString,
-      headers: opts.headers,
     });
 
     console.log("✅ WhatsApp Sent:", response.data);
     return response.data;
-
   } catch (err) {
-    console.error(
-      "❌ WhatsApp Error:",
-      err.response?.data || err.message
-    );
+    console.error("❌ WhatsApp Error:", err.response?.data || err.message);
     throw err;
   }
 }
@@ -372,6 +340,9 @@ exports.createOrder = async (req, res) => {
         } else if (address.mobile) {
           phone = address.mobile;
           console.log("[DEBUG] Found mobile in address:", phone);
+        } else if (address.phoneNumber) {
+          phone = address.phoneNumber;
+          console.log("[DEBUG] Found phoneNumber in address:", phone);
         }
       }
 
@@ -380,7 +351,12 @@ exports.createOrder = async (req, res) => {
         console.log("[DEBUG] Formatted phone number:", formattedPhone);
 
         if (formattedPhone) {
-          const message = `🎉 Thank you for your order!\n\nOrder ID: ${createdOrder._id}\nTotal: ₹${finalTotal}\nWe'll notify you once it ships.\n\n- Affordable Team`;
+          // Build a more detailed order confirmation message
+          const itemList = normalizedItems
+            .map(item => `${item.productSnapshot?.name || 'Item'} x${item.quantity}`)
+            .join('\n');
+
+          const message = `🎉 Thank you for your order!\n\nOrder ID: ${createdOrder._id}\nTotal: ₹${finalTotal}\n\nItems:\n${itemList}\n\nWe'll notify you once it ships.\n\n- Affordable Team`;
           console.log("[DEBUG] Sending message to:", formattedPhone);
           await sendWhatsAppMessage(formattedPhone, message);
           console.log("[DEBUG] Message sent successfully");

@@ -394,27 +394,25 @@ function buildInvoiceHTML({ order, business }) {
 </html>`;
 }
 
-// ✅ MUCH safer puppeteer (works on Windows + Linux)
 async function htmlToPdfBuffer(html) {
   const browser = await puppeteer.launch({
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage", // 🔥 important for VPS
+    ],
   });
 
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
     await page.setContent(html, { waitUntil: "networkidle0" });
-    await page.emulateMediaType("screen");
 
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
-      preferCSSPageSize: true,
-      margin: { top: "18px", right: "18px", bottom: "18px", left: "18px" },
     });
 
-    // ✅ Ensure real buffer
     return Buffer.from(pdfBuffer);
   } finally {
     await browser.close();

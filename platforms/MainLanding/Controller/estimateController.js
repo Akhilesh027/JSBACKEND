@@ -29,20 +29,44 @@ exports.createEstimate = async (req, res) => {
   }
 };
 
+// ... (other imports and helpers remain the same)
+
 exports.updateStep2 = async (req, res) => {
   try {
     const { id } = req.params;
-    const { kitchen, wardrobe, tvUnit } = req.body;
+    const {
+      kitchen,
+      wardrobe,
+      tvUnit,
+      sofaSet,
+      beds,
+      centerTables,
+      crockeryUnit,
+      diningTableSet,
+      foyers,
+      vanityUnit,
+      studyUnit,
+      outdoorFurniture,
+    } = req.body;
 
-    const estimate = await Estimate.findByIdAndUpdate(
-      id,
-      {
-        kitchen: kitchen ?? true,
-        wardrobe: Number(wardrobe ?? 0),
-        tvUnit: Number(tvUnit ?? 0),
-      },
-      { new: true }
-    );
+    const updateData = {
+      kitchen: kitchen ?? true,
+      wardrobe: Number(wardrobe ?? 0),
+      tvUnit: Number(tvUnit ?? 0),
+      sofaSet: Number(sofaSet ?? 0),
+      beds: Number(beds ?? 0),
+      centerTables: Number(centerTables ?? 0),
+      crockeryUnit: Number(crockeryUnit ?? 0),
+      diningTableSet: Number(diningTableSet ?? 0),
+      foyers: Number(foyers ?? 0),
+      vanityUnit: Number(vanityUnit ?? 0),
+      studyUnit: Number(studyUnit ?? 0),
+      outdoorFurniture: Number(outdoorFurniture ?? 0),
+    };
+
+    const estimate = await Estimate.findByIdAndUpdate(id, updateData, {
+      new: true,
+    });
 
     if (!estimate) return bad(res, 404, "Estimate not found");
     return ok(res, estimate, "Step 2 updated");
