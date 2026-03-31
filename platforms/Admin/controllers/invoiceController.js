@@ -139,12 +139,14 @@ async function findOrderAndDetails({ website, orderId }) {
 }
 
 function buildInvoiceHTML({ order, business }) {
+  // Unified default business object containing both company details
   const b = business || {
-    name: "JS GALLOR",
-    address: "India",
+    name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
+    address:
+      "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
     email: "directorjsgallor@gmail.com",
     phone: "+91-XXXXXXXXXX",
-    gst: "",
+    gst: "36AAHCJ1470F1ZP",
     logoUrl: "",
     publicBaseUrl: "",
   };
@@ -160,7 +162,11 @@ function buildInvoiceHTML({ order, business }) {
     order.shippingAddress?.firstName ||
     "Customer";
 
-  const customerEmail = order.userDetails?.email || order.addressDetails?.email || order.shippingAddress?.email || "";
+  const customerEmail =
+    order.userDetails?.email ||
+    order.addressDetails?.email ||
+    order.shippingAddress?.email ||
+    "";
   const customerPhone =
     order.userDetails?.phone ||
     order.addressSnapshot?.phone ||
@@ -197,7 +203,7 @@ function buildInvoiceHTML({ order, business }) {
   const pay = order.payment || {};
   const payMeta = pay.meta || {};
 
-  // ✅ NEW: helper to build absolute image URLs for puppeteer PDF rendering
+  // Helper to build absolute image URLs for puppeteer PDF rendering
   const isAbsoluteUrl = (url = "") => /^https?:\/\//i.test(String(url || ""));
   const joinUrl = (base, rel) => {
     const b = String(base || "").replace(/\/+$/, "");
@@ -231,32 +237,29 @@ function buildInvoiceHTML({ order, business }) {
       const imgUrl = resolveImageUrl(it);
 
       return `
-        <tr>
-          <td>${idx + 1}</td>
-
-          <!-- ✅ NEW: Image column -->
-          <td style="width:74px">
-            ${
-              imgUrl
-                ? `<img
-                     src="${safe(imgUrl)}"
-                     alt="product"
-                     style="width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid #eee;background:#fafafa"
-                     onerror="this.style.display='none'"
-                   />`
-                : `<div style="width:56px;height:56px;border-radius:10px;border:1px dashed #ddd;background:#fafafa"></div>`
-            }
-          </td>
-
-          <td>
-            <div style="font-weight:600">${safe(name)}</div>
-            <div style="font-size:12px;color:#666;margin-top:4px">Product: ${safe(it.productId || "")}</div>
-          </td>
-
-          <td style="text-align:right">${qty}</td>
-          <td style="text-align:right">${formatINR(unit)}</td>
-          <td style="text-align:right;font-weight:600">${formatINR(line)}</td>
-        </tr>
+          <tr>
+            <td>${idx + 1}</td>
+            <!-- Image column -->
+            <td style="width:74px">
+              ${
+                imgUrl
+                  ? `<img
+                       src="${safe(imgUrl)}"
+                       alt="product"
+                       style="width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid #eee;background:#fafafa"
+                       onerror="this.style.display='none'"
+                     />`
+                  : `<div style="width:56px;height:56px;border-radius:10px;border:1px dashed #ddd;background:#fafafa"></div>`
+              }
+            </td>
+            <td>
+              <div style="font-weight:600">${safe(name)}</div>
+              <div style="font-size:12px;color:#666;margin-top:4px">Product: ${safe(it.productId || "")}</div>
+            </td>
+            <td style="text-align:right">${qty}</td>
+            <td style="text-align:right">${formatINR(unit)}</td>
+            <td style="text-align:right;font-weight:600">${formatINR(line)}</td>
+          </tr>
       `;
     })
     .join("");
@@ -299,7 +302,7 @@ function buildInvoiceHTML({ order, business }) {
           ${
             b.logoUrl
               ? `<img src="${b.logoUrl}" style="width:44px;height:44px;object-fit:cover"/>`
-              : "JG"
+              : "JL"
           }
         </div>
         <div>
@@ -431,13 +434,18 @@ exports.downloadInvoicePdf = async (req, res) => {
     const { order } = await findOrderAndDetails({ website, orderId });
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
+    // Use unified business details (combined company name)
     const html = buildInvoiceHTML({
       order,
       business: {
-        name: "JS GALLOR",
-        address: "India",
-        email: "support@jsgallor.com",
+        name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
+        address:
+          "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
+        email: "directorjsgallor@gmail.com",
         phone: "+91-XXXXXXXXXX",
+        gst: "36AAHCJ1470F1ZP",
+        logoUrl: "",
+        publicBaseUrl: "",
       },
     });
 
@@ -495,13 +503,18 @@ exports.emailInvoice = async (req, res) => {
       });
     }
 
+    // Use unified business details (combined company name)
     const html = buildInvoiceHTML({
       order,
       business: {
-        name: "JS GALLOR",
-        address: "India",
-        email: "support@jsgallor.com",
+        name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
+        address:
+          "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
+        email: "directorjsgallor@gmail.com",
         phone: "+91-XXXXXXXXXX",
+        gst: "36AAHCJ1470F1ZP",
+        logoUrl: "",
+        publicBaseUrl: "",
       },
     });
 

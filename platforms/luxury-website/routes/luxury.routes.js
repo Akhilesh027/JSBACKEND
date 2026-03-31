@@ -55,7 +55,8 @@ router.get("/api/luxury/orders/my", luxuryAuthMiddleware, getMyOrders);
 router.get("/api/luxury/orders/:orderId", luxuryAuthMiddleware, getOrderById);
 
 router.get("/api/luxury/wishlist", luxuryAuthMiddleware, wishlist.getWishlist);
-router.put("/api/luxury/wishlist", luxuryAuthMiddleware, wishlist.replaceWishlist);
-router.post("/api/luxury/wishlist/merge", luxuryAuthMiddleware, wishlist.mergeWishlist);
-router.post("/api/luxury/wishlist/toggle", luxuryAuthMiddleware, wishlist.toggleWishlist);
+router.post("/api/luxury/wishlist", luxuryAuthMiddleware, wishlist.addToWishlist);
+router.delete("/api/luxury/wishlist/:productId", luxuryAuthMiddleware, wishlist.removeFromWishlist);
+
+
 module.exports = router;

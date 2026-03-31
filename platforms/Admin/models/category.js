@@ -17,6 +17,7 @@ const CategorySchema = new mongoose.Schema(
 
     description: { type: String, default: "" },
     imageUrl: { type: String, default: "" },
+    imagePublicId: { type: String, default: "" }, // ✅ Add this field for Cloudinary
 
     status: {
       type: String,
@@ -36,13 +37,11 @@ const CategorySchema = new mongoose.Schema(
     seoDescription: { type: String, default: "" },
     seoKeywords: { type: String, default: "" },
 
-    // optional cached count (keep in sync later)
     productCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
-// unique per segment
 CategorySchema.index({ segment: 1, slug: 1 }, { unique: true });
 CategorySchema.index({ parentId: 1, segment: 1 });
 

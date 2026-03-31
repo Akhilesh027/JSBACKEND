@@ -6,6 +6,7 @@ const productController = require('../controllers/ProductController');
 const cartController = require("../controllers/cartController");
 const orderController = require("../controllers/midrangeOrderController");
 const addressController = require("../controllers/midrangeAddressController");
+const wishlistController = require("../controllers/midWishlistController"); // new import
 
 // Public Routes
 router.post('/api/midrange/signup', authController.signup);
@@ -40,6 +41,23 @@ router.get(
   "/api/midrange/orders",
   midrangeAuthMiddleware,
   orderController.getMyOrders
+);
+
+// Wishlist routes
+router.get(
+  "/api/midrange/wishlist",
+  midrangeAuthMiddleware,
+  wishlistController.getWishlist
+);
+router.post(
+  "/api/midrange/wishlist/:productId",
+  midrangeAuthMiddleware,
+  wishlistController.addToWishlist
+);
+router.delete(
+  "/api/midrange/wishlist/:productId",
+  midrangeAuthMiddleware,
+  wishlistController.removeFromWishlist
 );
 
 module.exports = router;

@@ -12,7 +12,7 @@ const {
   updateEstimate,
 } = require("../Controller/estimateController.js");
 
-const { upload } = require("../middleware/upload");
+const upload = require("../../../shared/middleware/upload.js"); // ✅ direct import (no destructuring)
 
 router.post("/", createEstimate);
 router.patch("/:id/step2", updateStep2);
@@ -21,6 +21,7 @@ router.get("/", getAllEstimates);
 router.patch(
   "/:id/step3",
   upload.fields([
+    { name: "planFile", maxCount: 1 },           // ✅ added
     { name: "floorplanPdf", maxCount: 1 },
     { name: "floorplanImages", maxCount: 10 },
   ]),

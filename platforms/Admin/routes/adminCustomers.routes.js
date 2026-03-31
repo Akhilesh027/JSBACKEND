@@ -17,6 +17,7 @@ const {
   approveManufacturer,
   getManufacturerById,
   updateManufacturer,
+  getManufacturerProducts
 } = require("../controllers/adminManufacturer.controller");
 const AllOrdersController = require("../controllers/AllOrdersController");
 const adminCatalogController = require("../controllers/adminCatalogController");
@@ -43,7 +44,7 @@ router.patch("/api/admin/manufacturers/:id/under-review", setUnderReviewManufact
 router.get("/api/admin/manufacturers/:id", getManufacturerById);
 router.patch("/api/admin/manufacturers/:id", updateManufacturer);
 router.delete("/api/admin/manufacturers/:id", deleteManufacturer);
-
+router.get('/api/admin/manufacturers/products/:manufacturerId', getManufacturerProducts);
 // --------------------
 // Catalogs / Products
 // --------------------

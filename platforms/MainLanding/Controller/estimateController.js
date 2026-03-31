@@ -1,13 +1,13 @@
 const Estimate = require("../models/Estimate");
 
+// Helper functions
 const ok = (res, data, message = "OK") =>
   res.json({ success: true, message, data });
 
 const bad = (res, status, message) =>
   res.status(status).json({ success: false, message });
 
-// ---------- Existing endpoints (unchanged) ----------
-
+// ---------- Step 1: Create estimate ----------
 exports.createEstimate = async (req, res) => {
   try {
     const { floorplan, purpose, propertyType } = req.body;
@@ -29,14 +29,11 @@ exports.createEstimate = async (req, res) => {
   }
 };
 
-// ... (other imports and helpers remain the same)
-
+// ---------- Step 2: Update furniture (kitchen & wardrobe removed) ----------
 exports.updateStep2 = async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      kitchen,
-      wardrobe,
       tvUnit,
       sofaSet,
       beds,
@@ -49,9 +46,8 @@ exports.updateStep2 = async (req, res) => {
       outdoorFurniture,
     } = req.body;
 
+    // Build update object with only the fields present in the new schema
     const updateData = {
-      kitchen: kitchen ?? true,
-      wardrobe: Number(wardrobe ?? 0),
       tvUnit: Number(tvUnit ?? 0),
       sofaSet: Number(sofaSet ?? 0),
       beds: Number(beds ?? 0),
@@ -75,27 +71,41 @@ exports.updateStep2 = async (req, res) => {
   }
 };
 
+// ---------- Step 3: Upload floorplan details (with Cloudinary) ----------
+// This function is intended to be used with multer middleware that handles:
+//   - 'planFile' (single file)
+//   - 'floorplanPdf' (single file)
+//   - 'floorplanImages' (multiple files)
 exports.updateStep3 = async (req, res) => {
   try {
     const { id } = req.params;
     const { plotSize } = req.body;
 
-    const pdf = req.files?.floorplanPdf?.[0];
-    const images = req.files?.floorplanImages || [];
+    // Validate required field
+    if (!plotSize) {
+      return bad(res, 400, "plotSize is required");
+    }
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const pdfUrl = pdf ? `${baseUrl}/uploads/${pdf.filename}` : "";
-    const imageUrls = images.map((f) => `${baseUrl}/uploads/${f.filename}`);
+    // Get file URLs from multer (they are already uploaded to Cloudinary)
+    const planFile = req.files?.planFile?.[0];
+    const floorplanPdf = req.files?.floorplanPdf?.[0];
+    const floorplanImages = req.files?.floorplanImages || [];
 
     const estimate = await Estimate.findById(id);
     if (!estimate) return bad(res, 404, "Estimate not found");
 
-    if (plotSize) estimate.plotSize = plotSize;
-    if (pdfUrl) estimate.floorplanPdfUrl = pdfUrl;
-    if (imageUrls.length) {
+    // Update text fields
+    estimate.plotSize = plotSize;
+
+    // Update file URLs
+    if (planFile) estimate.planFileUrl = planFile.path;   // Cloudinary secure URL
+    if (floorplanPdf) estimate.floorplanPdfUrl = floorplanPdf.path;
+
+    if (floorplanImages.length) {
+      const newImageUrls = floorplanImages.map(img => img.path);
       estimate.floorplanImageUrls = [
         ...(estimate.floorplanImageUrls || []),
-        ...imageUrls,
+        ...newImageUrls,
       ];
     }
 
@@ -106,6 +116,7 @@ exports.updateStep3 = async (req, res) => {
   }
 };
 
+// ---------- Step 4: Submit estimate (contact details) ----------
 exports.updateStep4Submit = async (req, res) => {
   try {
     const { id } = req.params;
@@ -134,6 +145,7 @@ exports.updateStep4Submit = async (req, res) => {
   }
 };
 
+// ---------- Retrieve single estimate ----------
 exports.getEstimateById = async (req, res) => {
   try {
     const estimate = await Estimate.findById(req.params.id);
@@ -144,6 +156,7 @@ exports.getEstimateById = async (req, res) => {
   }
 };
 
+// ---------- List estimates (with filters) ----------
 exports.getAllEstimates = async (req, res) => {
   try {
     const { status, q } = req.query;
@@ -169,13 +182,12 @@ exports.getAllEstimates = async (req, res) => {
   }
 };
 
-// ---------- NEW: Admin update endpoint for amounts ----------
+// ---------- Admin: update estimated/total amounts ----------
 exports.updateEstimate = async (req, res) => {
   try {
     const { id } = req.params;
     const { estimatedAmount, totalAmount } = req.body;
 
-    // Build update object – only allow these two fields
     const update = {};
     if (estimatedAmount !== undefined) update.estimatedAmount = Number(estimatedAmount);
     if (totalAmount !== undefined) update.totalAmount = Number(totalAmount);

@@ -1,10 +1,14 @@
+// controllers/adminManufacturer.controller.js
 const mongoose = require("mongoose");
 const Manufacturer = require("../../manufacturer-portal/models/Manufacturer");
 const PurchaseOrder = require("../models/PurchaseOrder");
+const Product = require("../../manufacturer-portal/models/Product"); // import Product model
 
+// -------------------------------------------------------------------
+// Manufacturers (unchanged except we may use it for order)
+// -------------------------------------------------------------------
 exports.getManufacturersForOrder = async (req, res) => {
   try {
-    // ✅ only VERIFIED manufacturers
     const manufacturers = await Manufacturer.find({
       verificationStatus: "Verified",
       isActive: true,
@@ -20,53 +24,79 @@ exports.getManufacturersForOrder = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-// GET manufacturer full details by id
+
 exports.getManufacturerById = async (req, res) => {
   try {
     const { id } = req.params;
-
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid manufacturer id" });
     }
-
     const manufacturer = await Manufacturer.findById(id).select(
       "companyName legalName email mobile telephone city country verificationStatus businessNature itemsInterested"
     );
-
     if (!manufacturer) {
       return res.status(404).json({ success: false, message: "Manufacturer not found" });
     }
-
     res.json({ success: true, manufacturer });
   } catch (err) {
     console.error("getManufacturerById error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+// -------------------------------------------------------------------
+// Products – using path parameter
+// -------------------------------------------------------------------
+exports.getManufacturerProducts = async (req, res) => {
+  try {
+    const { manufacturerId } = req.params;
+    if (!manufacturerId) {
+      return res.status(400).json({ success: false, message: "manufacturerId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(manufacturerId)) {
+      return res.status(400).json({ success: false, message: "Invalid manufacturerId format" });
+    }
+    const products = await Product.find({ manufacturer: manufacturerId })
+      .select("name sku price")
+      .lean();
+    return res.status(200).json({ success: true, products });
+  } catch (err) {
+    console.error("getManufacturerProducts error:", err);
+    return res.status(500).json({ success: false, message: "Failed to fetch products" });
+  }
+};
+
+// -------------------------------------------------------------------
+// Purchase Orders – multi‑item support
+// -------------------------------------------------------------------
 exports.createOrder = async (req, res) => {
   try {
     const {
       manufacturerId,
-      productName,
-      sku,
-      quantity,
+      items,           // array of { productId, productName, sku, quantity }
       address,
       expectedDate,
       paymentOption,
       notes,
-      status,
+      status = "draft",
     } = req.body;
 
     if (!manufacturerId || !mongoose.Types.ObjectId.isValid(manufacturerId)) {
       return res.status(400).json({ success: false, message: "Invalid manufacturerId" });
     }
 
-    if (!productName || !String(productName).trim()) {
-      return res.status(400).json({ success: false, message: "productName is required" });
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: "At least one item is required" });
     }
 
-    if (!quantity || Number(quantity) < 1) {
-      return res.status(400).json({ success: false, message: "quantity must be at least 1" });
+    // Validate each item
+    for (const item of items) {
+      if (!item.productId || !item.productName || !item.quantity || item.quantity < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Each item must have productId, productName, and quantity >= 1",
+        });
+      }
     }
 
     if (!address || !expectedDate || !paymentOption) {
@@ -76,13 +106,12 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // ensure manufacturer exists + verified
+    // Verify manufacturer exists and is verified
     const mfg = await Manufacturer.findOne({
       _id: manufacturerId,
       verificationStatus: "Verified",
       isActive: true,
     });
-
     if (!mfg) {
       return res.status(404).json({
         success: false,
@@ -90,17 +119,26 @@ exports.createOrder = async (req, res) => {
       });
     }
 
+    // Build line items
+    const lineItems = items.map((item) => ({
+      productId: item.productId,
+      productName: String(item.productName).trim(),
+      sku: item.sku ? String(item.sku).trim() : undefined,
+      quantity: Number(item.quantity),
+    }));
+
     const order = await PurchaseOrder.create({
       manufacturer: manufacturerId,
-      productName: String(productName).trim(),
-      sku: sku ? String(sku).trim() : undefined,
-      quantity: Number(quantity),
+      items: lineItems,
       address,
       expectedDate: new Date(expectedDate),
       paymentOption,
       notes: notes || "",
-      status: status || "sent",
+      status,
     });
+
+    // Populate manufacturer for response
+    await order.populate("manufacturer", "companyName city country");
 
     res.status(201).json({ success: true, message: "Order created", order });
   } catch (err) {
@@ -109,10 +147,10 @@ exports.createOrder = async (req, res) => {
   }
 };
 
+// List orders (can filter by manufacturerId via query string)
 exports.listOrders = async (req, res) => {
   try {
     const { manufacturerId } = req.query;
-
     const filter = {};
     if (manufacturerId) {
       if (!mongoose.Types.ObjectId.isValid(manufacturerId)) {
@@ -131,10 +169,11 @@ exports.listOrders = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+// Get all orders (same as listOrders, but kept for compatibility)
 exports.getAllOrders = async (req, res) => {
   try {
     const { manufacturerId } = req.query;
-
     const filter = {};
     if (manufacturerId && mongoose.Types.ObjectId.isValid(String(manufacturerId))) {
       filter.manufacturer = manufacturerId;

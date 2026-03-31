@@ -1,47 +1,36 @@
 const mongoose = require("mongoose");
 
+const lineItemSchema = new mongoose.Schema({
+  productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+  productName: { type: String, required: true, trim: true },
+  sku: { type: String, trim: true },
+  quantity: { type: Number, required: true, min: 1 },
+});
+
 const PurchaseOrderSchema = new mongoose.Schema(
   {
-    manufacturer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Manufacturer",
-      required: true,
-    },
-
-    productName: { type: String, required: true, trim: true },
-    sku: { type: String, trim: true },
-
-    quantity: { type: Number, required: true, min: 1 },
-
+    orderNumber: { type: String, unique: true, sparse: true },
+    manufacturer: { type: mongoose.Schema.Types.ObjectId, ref: "Manufacturer", required: true },
+    items: [lineItemSchema], // ✅ supports multiple products
     address: { type: String, required: true, trim: true },
     expectedDate: { type: Date, required: true },
-
-    paymentOption: {
-      type: String,
-      enum: ["advance", "partial", "credit", "delivery"],
-      required: true,
-    },
-
+    paymentOption: { type: String, enum: ["advance", "partial", "credit", "delivery"], required: true },
     notes: { type: String, trim: true },
-
-  status: {
-  type: String,
-  enum: [
-    "pending",
-    "accepted",
-    "rejected",
-    "packed",
-    "shipped",
-    "in_transit",
-    "out_for_delivery",
-    "delivered",
-  ],
-  default: "pending",
-},
-
-
+    status: {
+      type: String,
+      enum: ["pending", "accepted", "rejected", "packed", "shipped", "in_transit", "out_for_delivery","sent", "delivered"],
+      default: "pending",
+    },
   },
   { timestamps: true }
 );
+
+PurchaseOrderSchema.pre("save", async function (next) {
+  if (!this.orderNumber) {
+    const count = await mongoose.model("PurchaseOrder").countDocuments();
+    this.orderNumber = `PO-${String(count + 1).padStart(5, "0")}`;
+  }
+  next();
+});
 
 module.exports = mongoose.model("PurchaseOrder", PurchaseOrderSchema);

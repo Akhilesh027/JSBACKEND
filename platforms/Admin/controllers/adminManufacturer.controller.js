@@ -1,58 +1,82 @@
 // controllers/adminManufacturer.controller.js
+const mongoose = require("mongoose");
 const Manufacturer = require("../../manufacturer-portal/models/Manufacturer");
+const Product = require("../../manufacturer-portal/models/Product"); // ✅ added product model import
 
-// ✅ map your schema correctly for admin table
-const normalizeManufacturer = (doc) => ({
-  id: doc._id,
+function normalizeManufacturer(m) {
+  return {
+    id: String(m._id),
+    companyName: m.companyName,
+    contactPerson: m.legalName || m.contactPerson,
+    email: m.email,
+    mobile: m.mobile,
+    telephone: m.telephone,
+    city: m.city,
+    state: m.state, // may be undefined; frontend can handle empty
+    country: m.country,
+    gstNumber: m.gstNumber,
+    panNumber: m.panNumber,
+    catalogCount: m.productCount || m.activeProducts || 0, // use computed productCount
+    totalRevenue: m.totalRevenue || 0,
+    totalOrders: m.totalOrders || 0,
+    profileCompletion: m.profileCompletion || 0,
+    isActive: m.isActive,
+    verificationStatus: m.verificationStatus,
+    status: m.verificationStatus?.toLowerCase() || "pending",
+  };
+}
 
-  // table fields
-  companyName: doc.companyName || "",
-  contactPerson: doc.legalName || "", // you don't have contactPerson, using legalName as best match
-  mobile: doc.mobile || "",
-  telephone: doc.telephone || "",
-  email: doc.email || "",
-
-  city: doc.city || "",
-  country: doc.country || "",
-
-  gstNumber: doc.gstNumber || "",
-  panNumber: doc.panNumber || "",
-
-  catalogCount: Number(doc.activeProducts || 0), // or create a real catalogs field later
-  totalRevenue: Number(doc.totalRevenue || 0),
-  totalOrders: Number(doc.totalOrders || 0),
-
-  // ✅ status mapping for UI
-  status: (doc.verificationStatus || "Pending").toLowerCase(), // pending/under review/verified/rejected
-
-  // extra useful fields
-  verificationStatus: doc.verificationStatus || "Pending",
-  isActive: !!doc.isActive,
-  profileCompletion: Number(doc.profileCompletion || 0),
-  registrationDate: doc.registrationDate || doc.createdAt,
-
-  createdAt: doc.createdAt,
-  updatedAt: doc.updatedAt,
-});
-
-// ✅ GET ALL
 exports.getAllManufacturers = async (req, res) => {
   try {
-    const manufacturers = await Manufacturer.find({ role: "manufacturer" })
-      .sort({ createdAt: -1 })
-      .lean();
+    const manufacturers = await Manufacturer.aggregate([
+      { $match: { role: "manufacturer" } },
+      {
+        $lookup: {
+          from: "products", // ensure this matches the actual collection name
+          localField: "_id",
+          foreignField: "manufacturer",
+          as: "products"
+        }
+      },
+      {
+        $addFields: {
+          productCount: { $size: "$products" }
+        }
+      },
+      {
+        $project: { products: 0 } // remove the products array from result
+      },
+      { $sort: { createdAt: -1 } }
+    ]);
 
     const data = manufacturers.map(normalizeManufacturer);
-
     return res.status(200).json({ success: true, data });
   } catch (error) {
     console.error("getAllManufacturers error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to fetch manufacturers" });
+    return res.status(500).json({ success: false, message: "Failed to fetch manufacturers" });
   }
 };
 
+
+
+exports.getManufacturerProducts = async (req, res) => {
+  try {
+    const { manufacturerId } = req.params;
+    if (!manufacturerId) {
+      return res.status(400).json({ success: false, message: "manufacturerId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(manufacturerId)) {
+      return res.status(400).json({ success: false, message: "Invalid manufacturerId format" });
+    }
+    const products = await Product.find({ manufacturer: manufacturerId })
+      .select("name sku price")
+      .lean();
+    return res.status(200).json({ success: true, products });
+  } catch (error) {
+    console.error("getManufacturerProducts error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch products" });
+  }
+};
 // ✅ APPROVE (Verified)
 exports.approveManufacturer = async (req, res) => {
   try {
@@ -152,16 +176,19 @@ exports.deleteManufacturer = async (req, res) => {
     return res.status(500).json({ success: false, message: "Delete failed" });
   }
 };
+
+// ✅ GET SINGLE
 exports.getManufacturerById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const manufacturer = await Manufacturer.findById(id).lean();
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid manufacturer ID' });
+    }
 
+    const manufacturer = await Manufacturer.findById(id).lean();
     if (!manufacturer) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Manufacturer not found" });
+      return res.status(404).json({ success: false, message: 'Manufacturer not found' });
     }
 
     return res.status(200).json({
@@ -169,12 +196,12 @@ exports.getManufacturerById = async (req, res) => {
       data: normalizeManufacturer(manufacturer),
     });
   } catch (error) {
-    console.error("getManufacturerById error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to fetch manufacturer" });
+    console.error('getManufacturerById error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch manufacturer' });
   }
 };
+
+// ✅ UPDATE
 exports.updateManufacturer = async (req, res) => {
   try {
     const { id } = req.params;
@@ -218,4 +245,3 @@ exports.updateManufacturer = async (req, res) => {
     return res.status(500).json({ success: false, message: "Update failed" });
   }
 };
-

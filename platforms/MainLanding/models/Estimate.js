@@ -6,11 +6,8 @@ const EstimateSchema = new mongoose.Schema(
     purpose: { type: String, required: true },
     propertyType: { type: String, required: true },
 
-    // Step 2 – Furniture items
-    kitchen: { type: Boolean, default: true },
-    wardrobe: { type: Number, default: 0 },
+    // Step 2 – Furniture items (kitchen & wardrobe removed)
     tvUnit: { type: Number, default: 0 },
-    // New furniture items (quantities)
     sofaSet: { type: Number, default: 0 },
     beds: { type: Number, default: 0 },
     centerTables: { type: Number, default: 0 },
@@ -22,7 +19,8 @@ const EstimateSchema = new mongoose.Schema(
     outdoorFurniture: { type: Number, default: 0 },
 
     // Step 3 – Floorplan details
-    plotSize: { type: String, default: "" },
+    plotSize: { type: String, default: "" },          // ← NOT required
+    planFileUrl: { type: String, default: "" },       // ← new field for 2D/3D plan
     floorplanPdfUrl: { type: String, default: "" },
     floorplanImageUrls: { type: [String], default: [] },
 
