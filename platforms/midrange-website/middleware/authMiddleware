@@ -43,6 +43,8 @@ const midrangeAuthMiddleware = async (req, res, next) => {
     req.customer = customer;
     req.user = {
       id: customer._id,
+        _id: customer._id,   // ✅ add this line
+
       email: customer.email,
       role: customer.role,
       platform: customer.platform,

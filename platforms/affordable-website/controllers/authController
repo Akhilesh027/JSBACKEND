@@ -12,12 +12,14 @@ const generateToken = (id, email, role) => {
 };
 
 // Customer Signup
+// Customer Signup (updated to include phone)
 exports.signup = async (req, res) => {
   try {
-    let { name, email, password } = req.body;
+    let { name, email, phone, password } = req.body;
 
     name = (name || "").trim();
     email = (email || "").toLowerCase().trim();
+    phone = (phone || "").trim();          // optional, could be empty
     password = String(password || "");
 
     // ✅ Validation
@@ -43,6 +45,14 @@ exports.signup = async (req, res) => {
       });
     }
 
+    // ✅ Optional phone validation (10 digits, only if provided)
+    if (phone && !/^\d{10}$/.test(phone.replace(/\D/g, ""))) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number must be a valid 10-digit number",
+      });
+    }
+
     // ✅ Check if customer already exists
     const existingCustomer = await Customer.findOne({ email });
     if (existingCustomer) {
@@ -52,26 +62,22 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // ✅ Create customer
-    // NOTE:
-    // If your Customer schema already hashes password in pre("save"), then keep it as-is.
-    // If it does NOT hash automatically, you must hash here with bcrypt.
+    // ✅ Create customer (include phone if provided)
     const customer = await Customer.create({
       name,
       email,
-      password, // ✅ keep if schema hashes; else hash before saving
+      phone: phone || undefined,   // only set if phone is truthy
+      password,
       platform: "affordable",
       role: "customer",
       isActive: true,
       isVerified: false,
-      authProvider: "local", // ✅ helpful for google later
-      lastLogin: null,       // ✅ don't set login time on signup
     });
 
     // ✅ Generate token
     const token = generateToken(customer._id, customer.email, customer.role);
 
-    // ✅ (Optional but recommended) also set cookie
+    // ✅ Set cookie
     const isProd = process.env.NODE_ENV === "production";
     res.cookie("token", token, {
       httpOnly: true,
@@ -88,6 +94,7 @@ exports.signup = async (req, res) => {
         id: customer._id,
         name: customer.name,
         email: customer.email,
+        phone: customer.phone || null,    // include phone in response
         role: customer.role,
         platform: customer.platform,
         isVerified: customer.isVerified,
@@ -261,13 +268,13 @@ exports.getProfile = async (req, res) => {
 };
 
 // Update Customer Profile
+// Update Customer Profile
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const { name, phone, avatar, email } = req.body;
 
-    // if you want to restrict email update, remove email from allowed updates.
     const update = {};
     if (name !== undefined) update.name = name.trim();
     if (phone !== undefined) update.phone = phone.trim();
@@ -276,21 +283,43 @@ exports.updateProfile = async (req, res) => {
 
     // Optional: validate phone format
     if (update.phone && !/^\d{10}$/.test(update.phone.replace(/\D/g, ""))) {
-      return res.status(400).json({ error: "Phone must be 10 digits" });
+      return res.status(400).json({
+        success: false,
+        message: "Phone must be a valid 10-digit number"
+      });
     }
 
     // Optional: check email uniqueness
     if (update.email) {
-      const exists = await User.findOne({ email: update.email, _id: { $ne: userId } });
-      if (exists) return res.status(400).json({ error: "Email already in use" });
+      const exists = await Customer.findOne({ email: update.email, _id: { $ne: userId } });
+      if (exists) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already in use"
+        });
+      }
     }
 
-    const updated = await User.findByIdAndUpdate(userId, update, { new: true }).select("-password");
-    if (!updated) return res.status(404).json({ error: "User not found" });
+    const updated = await Customer.findByIdAndUpdate(userId, update, { new: true }).select("-password");
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Customer not found"
+      });
+    }
 
-    return res.json({ user: updated });
+    // ✅ Return in the format frontend expects
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      customer: updated
+    });
   } catch (err) {
-    return res.status(500).json({ error: "Failed to update profile" });
+    console.error("Update profile error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile"
+    });
   }
 };
 

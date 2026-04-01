@@ -17,8 +17,23 @@ const CustomerSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    // Conditional required: only if authProvider is 'local'
+    required: function() {
+      return this.authProvider === 'local';
+    },
     minlength: 6
+  },
+  
+  // Authentication provider
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
+  },
+  googleId: {
+    type: String,
+    sparse: true,    // allows multiple null values but still unique if present
+    index: true
   },
   
   // Platform Information
@@ -44,8 +59,22 @@ const CustomerSchema = new mongoose.Schema({
   },
   
   // Profile Information (optional)
-  phone: String,
- addresses: [{
+  phone: {
+    type: String,
+    trim: true,
+    // Optional: add index for fast lookup
+    index: true,
+    // Optional: custom validation if needed (e.g., 10 digits)
+    validate: {
+      validator: function(v) {
+        // allow empty or null, but if present, must be a valid 10-digit number
+        if (!v) return true;
+        return /^\d{10}$/.test(v.replace(/\D/g, ''));
+      },
+      message: 'Phone number must be a valid 10-digit number'
+    }
+  },
+  addresses: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: "AffordableAddress", // ✅ your address model name
   }],
@@ -97,8 +126,9 @@ const CustomerSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Hash password before saving
+// Hash password before saving (only if password is modified and authProvider is local)
 CustomerSchema.pre('save', async function(next) {
+  if (this.authProvider !== 'local') return next();
   if (!this.isModified('password')) return next();
   
   try {
@@ -116,8 +146,9 @@ CustomerSchema.pre('save', function(next) {
   next();
 });
 
-// Compare password method
+// Compare password method (only works for local accounts)
 CustomerSchema.methods.comparePassword = async function(candidatePassword) {
+  if (this.authProvider !== 'local') return false;
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

@@ -108,6 +108,8 @@ const {
   updateAdminRole,
   updateAdminActive,
   loginAdmin,
+  getAdminById,
+  updateAdmin
 } = require("../controllers/capAdminController");
 
 router.post("/api/admin/cap/admins", /*protect, isCapAdmin,*/ createAdmin);
@@ -115,7 +117,8 @@ router.get("/api/admin/cap/admins", /*protect, isCapAdmin,*/ listAdmins);
 router.patch("/api/admin/cap/admins/:id/role", /*protect, isCapAdmin,*/ updateAdminRole);
 router.patch("/api/admin/cap/admins/:id/toggle", updateAdminActive);
 router.delete("/api/admin/cap/admins/:id", /*protect, isCapAdmin,*/ deleteAdmin);
-
+router.get("/api/admin/cap/admins/:id", /* protect, isCapAdmin, */ getAdminById);
+router.put("/api/admin/cap/admins/:id", /* protect, isCapAdmin, */ updateAdmin);
 
 const {
   getVendorOrdersAdmin,
