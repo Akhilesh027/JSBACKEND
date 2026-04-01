@@ -12,7 +12,7 @@ const {
   updateEstimate,
 } = require("../Controller/estimateController.js");
 
-const upload = require("../../../shared/middleware/upload.js"); // ✅ direct import (no destructuring)
+const {upload} = require("../middleware/upload.js"); // ✅ direct import (no destructuring)
 
 router.post("/", createEstimate);
 router.patch("/:id/step2", updateStep2);

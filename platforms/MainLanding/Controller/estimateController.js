@@ -1,4 +1,5 @@
 const Estimate = require("../models/Estimate");
+const path = require("path"); // <-- needed for basename
 
 // Helper functions
 const ok = (res, data, message = "OK") =>
@@ -81,31 +82,35 @@ exports.updateStep3 = async (req, res) => {
     const { id } = req.params;
     const { plotSize } = req.body;
 
-    // Validate required field
     if (!plotSize) {
       return bad(res, 400, "plotSize is required");
     }
 
-    // Get file URLs from multer (they are already uploaded to Cloudinary)
+    const estimate = await Estimate.findById(id);
+    if (!estimate) return bad(res, 404, "Estimate not found");
+
+    // Get uploaded files from multer
     const planFile = req.files?.planFile?.[0];
     const floorplanPdf = req.files?.floorplanPdf?.[0];
     const floorplanImages = req.files?.floorplanImages || [];
 
-    const estimate = await Estimate.findById(id);
-    if (!estimate) return bad(res, 404, "Estimate not found");
+    // Build web‑accessible URLs (relative to the uploads folder)
+    const planFileUrl = planFile ? `/uploads/${path.basename(planFile.path)}` : null;
+    const floorplanPdfUrl = floorplanPdf ? `/uploads/${path.basename(floorplanPdf.path)}` : null;
+    const floorplanImageUrls = floorplanImages.map(img => `/uploads/${path.basename(img.path)}`);
 
     // Update text fields
     estimate.plotSize = plotSize;
 
-    // Update file URLs
-    if (planFile) estimate.planFileUrl = planFile.path;   // Cloudinary secure URL
-    if (floorplanPdf) estimate.floorplanPdfUrl = floorplanPdf.path;
+    // Update file URLs (overwrite if new files are uploaded)
+    if (planFileUrl) estimate.planFileUrl = planFileUrl;
+    if (floorplanPdfUrl) estimate.floorplanPdfUrl = floorplanPdfUrl;
 
-    if (floorplanImages.length) {
-      const newImageUrls = floorplanImages.map(img => img.path);
+    // Append new images to existing ones (if any)
+    if (floorplanImageUrls.length) {
       estimate.floorplanImageUrls = [
         ...(estimate.floorplanImageUrls || []),
-        ...newImageUrls,
+        ...floorplanImageUrls,
       ];
     }
 

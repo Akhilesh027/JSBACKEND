@@ -5,6 +5,7 @@ const helmet = require("helmet");
 const hpp = require("hpp");
 const xss = require("xss-clean");
 const cookieParser = require("cookie-parser");
+const path = require("path"); // <-- needed for basename
 
 // Import Routes
 const AllRoutes = require("../routes/All.routes");
@@ -17,9 +18,11 @@ app.set("trust proxy", 1);
 // Body parsers
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: false, limit: "10kb" }));
+app.use('/uploads', express.static('uploads'));
 
 // Cookies (needed for res.cookie + reading cookies)
 app.use(cookieParser());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ✅ CORS Allowlist
 const ALLOWED_ORIGINS = [
@@ -32,6 +35,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8085",
   "http://localhost:8086",
   "http://localhost:8087",
+  "http://localhost:5000",
 
   "https://jsgallormanufacture.jsgallor.com",
   "https://vendor.jsgallor.com",
