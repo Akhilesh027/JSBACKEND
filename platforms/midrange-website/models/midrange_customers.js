@@ -30,7 +30,8 @@ const CustomerSchema = new mongoose.Schema({
     enum: ['affordable', 'midrange', 'luxury'],
     default: 'midrange'
   },
-  
+  resetPasswordToken: String,
+resetPasswordExpire: Date,
   // Account Status
   isVerified: {
     type: Boolean,

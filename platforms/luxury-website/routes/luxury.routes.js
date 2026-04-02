@@ -17,7 +17,8 @@ const { placeOrder, getMyOrders, getOrderById } = require("../controllers/luxury
 router.post('/api/luxury/signup', authController.signup);
 router.post('/api/luxury/login', authController.login);
 router.post('/api/luxury/logout', authController.logout);
-
+router.post("/api/luxury/forgot", authController.forgotPassword);
+router.post("/api/luxury/reset", authController.resetPassword);
 router.get('/api/luxury/profile', luxuryAuthMiddleware, authController.getProfile);
 router.put('/api/luxury/profile', luxuryAuthMiddleware, authController.updateProfile);
 

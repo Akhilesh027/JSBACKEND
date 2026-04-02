@@ -19,6 +19,9 @@ router.post('/api/affordable/logout', authController.logout);
 router.get('/api/affordable/profile', authMiddleware, authController.getProfile);
 router.put('/api/affordable/profile', authMiddleware, authController.updateProfile);
 router.put('/api/affordable/change-password', authMiddleware, authController.changePassword);
+router.post("/api/affordable/forgot-password", authController.forgotPassword);
+router.post("/api/affordable/reset-password", authController.resetPassword);
+
 router.get("/api/affordable/products", productController.getProducts);
 router.get("/api/affordable/products/:id", productController.getProductById);
 

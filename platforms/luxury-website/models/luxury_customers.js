@@ -15,7 +15,8 @@ const CustomerSchema = new mongoose.Schema(
       // ✅ better than old 2-3 TLD restriction
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
     },
-
+resetPasswordToken: String,
+resetPasswordExpire: Date,
     phone: { type: String, trim: true },
 
     password: { type: String, required: true, minlength: 8, select: false },

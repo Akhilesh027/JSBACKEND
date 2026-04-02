@@ -515,3 +515,156 @@ exports.upgradeMembership = async (req, res) => {
     });
   }
 };
+
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    console.log("🔥 Midrange Forgot API HIT");
+
+    const { email } = req.body;
+
+    const customer = await Customer.findOne({
+      email: email.toLowerCase().trim(),
+      platform: "midrange",
+    });
+
+    // 🔐 Don't reveal user existence
+    if (!customer) {
+      return res.status(200).json({
+        success: true,
+        message: "If email exists, reset link sent",
+      });
+    }
+
+    // 🔐 Generate token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    customer.resetPasswordToken = hashedToken;
+    customer.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+
+    await customer.save();
+
+    // 🔗 Reset URL (frontend midrange)
+    const resetUrl = `http://localhost:8080/reset-password?token=${resetToken}`;
+
+    console.log("🔗 Reset URL:", resetUrl);
+
+    // 📩 Email transporter (same as affordable)
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM,
+      to: customer.email,
+      subject: "Reset Your Password - JS Gallor Mid-range",
+      html: `
+        <h2>Password Reset</h2>
+        <p>Hello ${customer.fullName},</p>
+        <p>You requested a password reset.</p>
+        <p>
+          <a href="${resetUrl}" target="_blank" 
+          style="padding:10px 20px;background:#4f622b;color:#fff;text-decoration:none;border-radius:5px;">
+          Reset Password
+          </a>
+        </p>
+        <p>This link expires in 15 minutes.</p>
+      `,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log("✅ Midrange email sent");
+    } catch (err) {
+      console.error("❌ Email error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Email sending failed",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Reset link sent to your email",
+    });
+
+  } catch (error) {
+    console.error("❌ Forgot error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Token and password are required",
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters",
+      });
+    }
+
+    // 🔐 Hash token
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const customer = await Customer.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!customer) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired token",
+      });
+    }
+
+    // ✅ Update password
+    customer.password = password;
+
+    // ❌ Clear fields
+    customer.resetPasswordToken = undefined;
+    customer.resetPasswordExpire = undefined;
+
+    await customer.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset successful",
+    });
+
+  } catch (error) {
+    console.error("❌ Reset error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};

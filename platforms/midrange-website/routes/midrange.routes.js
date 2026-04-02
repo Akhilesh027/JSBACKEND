@@ -12,7 +12,8 @@ const wishlistController = require("../controllers/midWishlistController"); // n
 router.post('/api/midrange/signup', authController.signup);
 router.post('/api/midrange/login', authController.login);
 router.post('/api/midrange/logout', authController.logout);
-
+router.post("/api/midrange/forgot", authController.forgotPassword);
+router.post("/api/midrange/reset", authController.resetPassword);
 // Protected Routes (require authentication)
 router.get('/api/midrange/profile', midrangeAuthMiddleware, authController.getProfile);
 router.put('/api/midrange/profile', midrangeAuthMiddleware, authController.updateProfile);

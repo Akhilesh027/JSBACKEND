@@ -461,3 +461,166 @@ exports.requestConcierge = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    console.log("🔥 Luxury Forgot API HIT");
+
+    const { email } = req.body;
+
+    const normalizedEmail = String(email || "").toLowerCase().trim();
+
+    const customer = await Customer.findOne({ email: normalizedEmail });
+
+    // 🔐 Do not reveal existence
+    if (!customer) {
+      return res.status(200).json({
+        success: true,
+        message: "If email exists, reset link sent",
+      });
+    }
+
+    // 🔐 Generate token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    customer.resetPasswordToken = hashedToken;
+    customer.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+
+    await customer.save();
+
+    // 🔗 Reset URL (luxury frontend)
+    const resetUrl = `http://localhost:8080/reset-password?token=${resetToken}`;
+
+    console.log("🔗 Reset URL:", resetUrl);
+
+    // 📩 Email transporter
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const name =
+      customer.fullName ||
+      `${customer.firstName || ""} ${customer.lastName || ""}`.trim() ||
+      "Valued Client";
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM,
+      to: customer.email,
+      subject: "Luxury Account Password Reset",
+      html: `
+        <div style="font-family:Arial;padding:20px">
+          <h2 style="color:#d4af37;">Luxury Password Reset</h2>
+          <p>Hello ${name},</p>
+          <p>You requested a password reset for your luxury account.</p>
+
+          <p>
+            <a href="${resetUrl}" 
+            style="display:inline-block;padding:12px 24px;background:#d4af37;color:#000;text-decoration:none;border-radius:6px;font-weight:bold;">
+              Reset Password
+            </a>
+          </p>
+
+          <p>This link will expire in 15 minutes.</p>
+          <p>If you did not request this, please ignore.</p>
+        </div>
+      `,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log("✅ Luxury email sent");
+    } catch (err) {
+      console.error("❌ Email error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Email sending failed",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Reset link sent to your email",
+    });
+
+  } catch (error) {
+    console.error("❌ Forgot error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Token and password are required",
+      });
+    }
+
+    // 🔐 Use your existing strong validator
+    const pwErr = validatePasswordStrength(password);
+    if (pwErr) {
+      return res.status(400).json({
+        success: false,
+        message: pwErr,
+      });
+    }
+
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const customer = await Customer.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!customer) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired token",
+      });
+    }
+
+    // ✅ Update password (your model handles hashing)
+    customer.password = password;
+
+    // ❌ Clear reset fields
+    customer.resetPasswordToken = undefined;
+    customer.resetPasswordExpire = undefined;
+
+    await customer.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset successful",
+    });
+
+  } catch (error) {
+    console.error("❌ Reset error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};

@@ -23,7 +23,8 @@ const CustomerSchema = new mongoose.Schema({
     },
     minlength: 6
   },
-  
+  resetPasswordToken: String,
+resetPasswordExpire: Date,
   // Authentication provider
   authProvider: {
     type: String,
