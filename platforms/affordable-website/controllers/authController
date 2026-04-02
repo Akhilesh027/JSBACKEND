@@ -420,7 +420,7 @@ exports.forgotPassword = async (req, res) => {
 
     await customer.save();
 
-    const resetUrl = `http://localhost:8080/reset-password?token=${resetToken}`;
+    const resetUrl = `https://essentialstudio.jsgallor.com/reset-password?token=${resetToken}`;
 
     console.log("🔗 Reset URL:", resetUrl);
 

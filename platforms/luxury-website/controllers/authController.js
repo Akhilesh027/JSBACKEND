@@ -497,7 +497,7 @@ exports.forgotPassword = async (req, res) => {
     await customer.save();
 
     // 🔗 Reset URL (luxury frontend)
-    const resetUrl = `http://localhost:8080/reset-password?token=${resetToken}`;
+    const resetUrl = `https://celestialiving.jsgallor.com/reset-password?token=${resetToken}`;
 
     console.log("🔗 Reset URL:", resetUrl);
 

@@ -552,7 +552,7 @@ exports.forgotPassword = async (req, res) => {
     await customer.save();
 
     // 🔗 Reset URL (frontend midrange)
-    const resetUrl = `http://localhost:8080/reset-password?token=${resetToken}`;
+    const resetUrl = `https://signaturespaces.jsgallor.com/reset-password?token=${resetToken}`;
 
     console.log("🔗 Reset URL:", resetUrl);
 
