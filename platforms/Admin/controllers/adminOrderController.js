@@ -2,10 +2,10 @@
 const mongoose = require("mongoose");
 const Manufacturer = require("../../manufacturer-portal/models/Manufacturer");
 const PurchaseOrder = require("../models/PurchaseOrder");
-const Product = require("../../manufacturer-portal/models/Product"); // import Product model
+const Product = require("../../manufacturer-portal/models/Product");
 
 // -------------------------------------------------------------------
-// Manufacturers (unchanged except we may use it for order)
+// Manufacturers
 // -------------------------------------------------------------------
 exports.getManufacturersForOrder = async (req, res) => {
   try {
@@ -45,7 +45,7 @@ exports.getManufacturerById = async (req, res) => {
 };
 
 // -------------------------------------------------------------------
-// Products – using path parameter
+// Products – FULL details (including images, description, etc.)
 // -------------------------------------------------------------------
 exports.getManufacturerProducts = async (req, res) => {
   try {
@@ -56,9 +56,10 @@ exports.getManufacturerProducts = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(manufacturerId)) {
       return res.status(400).json({ success: false, message: "Invalid manufacturerId format" });
     }
-    const products = await Product.find({ manufacturer: manufacturerId })
-      .select("name sku price")
-      .lean();
+
+    // ✅ Return ALL fields from Product schema (images, description, category, stock, etc.)
+    const products = await Product.find({ manufacturer: manufacturerId }).lean();
+
     return res.status(200).json({ success: true, products });
   } catch (err) {
     console.error("getManufacturerProducts error:", err);
@@ -73,7 +74,7 @@ exports.createOrder = async (req, res) => {
   try {
     const {
       manufacturerId,
-      items,           // array of { productId, productName, sku, quantity }
+      items,
       address,
       expectedDate,
       paymentOption,
@@ -89,7 +90,6 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "At least one item is required" });
     }
 
-    // Validate each item
     for (const item of items) {
       if (!item.productId || !item.productName || !item.quantity || item.quantity < 1) {
         return res.status(400).json({
@@ -106,7 +106,6 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // Verify manufacturer exists and is verified
     const mfg = await Manufacturer.findOne({
       _id: manufacturerId,
       verificationStatus: "Verified",
@@ -119,7 +118,6 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // Build line items
     const lineItems = items.map((item) => ({
       productId: item.productId,
       productName: String(item.productName).trim(),
@@ -137,7 +135,6 @@ exports.createOrder = async (req, res) => {
       status,
     });
 
-    // Populate manufacturer for response
     await order.populate("manufacturer", "companyName city country");
 
     res.status(201).json({ success: true, message: "Order created", order });
@@ -147,7 +144,6 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// List orders (can filter by manufacturerId via query string)
 exports.listOrders = async (req, res) => {
   try {
     const { manufacturerId } = req.query;
@@ -170,7 +166,6 @@ exports.listOrders = async (req, res) => {
   }
 };
 
-// Get all orders (same as listOrders, but kept for compatibility)
 exports.getAllOrders = async (req, res) => {
   try {
     const { manufacturerId } = req.query;

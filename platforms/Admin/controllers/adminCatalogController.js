@@ -46,8 +46,6 @@ exports.getAllCatalogs = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch catalogs" });
   }
 };
-
-// PATCH /api/admin/catalogs/:id/status  body: { status: "approved" | "rejected" | "pending" }
 exports.updateCatalogStatus = async (req, res) => {
   try {
     const { status, discount, gst, isCustomized } = req.body;
