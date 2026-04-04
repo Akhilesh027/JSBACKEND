@@ -50,7 +50,7 @@ exports.getAllCatalogs = async (req, res) => {
 // PATCH /api/admin/catalogs/:id/status  body: { status: "approved" | "rejected" | "pending" }
 exports.updateCatalogStatus = async (req, res) => {
   try {
-    const { status, discount } = req.body;                     // added discount
+    const { status, discount, gst, isCustomized } = req.body;
 
     if (!["pending", "approved", "rejected"].includes(status)) {
       return res.status(400).json({
@@ -67,9 +67,31 @@ exports.updateCatalogStatus = async (req, res) => {
       });
     }
 
+    // Validate GST if provided
+    if (gst !== undefined && (typeof gst !== 'number' || gst < 0 || gst > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: "GST must be a number between 0 and 100",
+      });
+    }
+
+    // Validate isCustomized if provided (must be boolean)
+    if (isCustomized !== undefined && typeof isCustomized !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: "isCustomized must be a boolean",
+      });
+    }
+
     const updateData = { status };
     if (discount !== undefined && status === "approved") {
       updateData.discount = discount;
+    }
+    if (gst !== undefined) {
+      updateData.gst = gst;
+    }
+    if (isCustomized !== undefined) {
+      updateData.isCustomized = isCustomized;
     }
 
     const product = await Product.findByIdAndUpdate(
@@ -102,7 +124,9 @@ exports.updateCatalogStatus = async (req, res) => {
         shortDescription: product.shortDescription || "",
         description: product.description || "",
         price: product.price,
-        discount: product.discount || 0,                     // NEW
+        discount: product.discount || 0,
+        gst: product.gst || 0,                 // added
+        isCustomized: product.isCustomized || false, // added
         deliveryTime: product.deliveryTime || "",
         tier: product.tier || "mid_range",
         status: product.status,
@@ -117,7 +141,6 @@ exports.updateCatalogStatus = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update status" });
   }
 };
-
 // PUT /api/admin/catalogs/:id
 exports.updateCatalog = async (req, res) => {
   try {

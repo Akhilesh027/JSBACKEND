@@ -27,6 +27,17 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0 },
     discount: { type: Number, default: 0, min: 0, max: 100 },      // NEW: discount percentage
     quantity: { type: Number, default: 0, min: 0 },
+      gst: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    isCustomized: {
+    type: Boolean,
+    default: false,
+  },
+
     lowStockThreshold: { type: Number, default: 5 },
     availability: {
       type: String,
