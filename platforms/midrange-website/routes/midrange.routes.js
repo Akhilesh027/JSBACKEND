@@ -26,10 +26,13 @@ router.get("/api/midrange/products/:id", productController.getProductById);
 router.get("/api/midrange/cart/:id", midrangeAuthMiddleware, cartController.getCart);
 router.put("/api/midrange/cart", midrangeAuthMiddleware, cartController.replaceCart);
 router.post("/api/midrange/cart/add", midrangeAuthMiddleware, cartController.addToCart);
-router.patch("/api/midrange/cart/item/:productId", midrangeAuthMiddleware, cartController.updateCartItem);
-router.delete("/api/midrange/cart/item/:productId", midrangeAuthMiddleware, cartController.removeCartItem);
-router.delete("/api/midrange/cart", midrangeAuthMiddleware, cartController.clearCart);
 
+// ✅ FIXED: Use item _id instead of productId for these routes
+router.patch("/api/midrange/cart/item/:itemId", midrangeAuthMiddleware, cartController.updateCartItem);
+router.delete("/api/midrange/cart/item/:itemId", midrangeAuthMiddleware, cartController.removeCartItem);
+router.get("/api/midrange/cart/item/:itemId", midrangeAuthMiddleware, cartController.getCartItem); // Debug route
+
+router.delete("/api/midrange/cart", midrangeAuthMiddleware, cartController.clearCart);
 router.get("/api/midrange/addresses", midrangeAuthMiddleware, addressController.getMyAddresses);
 router.post("/api/midrange/addresses", midrangeAuthMiddleware, addressController.addAddress);
 router.patch("/api/midrange/addresses/:id/default", midrangeAuthMiddleware, addressController.setDefault);

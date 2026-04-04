@@ -15,7 +15,11 @@ const normalizeItems = (items = []) =>
         fabric: it.attributes?.fabric || null,
       },
       name: it.name,
-      price: Number(it.price || 0),
+      price: Number(it.price || 0),               // final discounted price
+      originalPrice: Number(it.originalPrice || it.price || 0),
+      discountPercent: Number(it.discountPercent || 0),
+      gst: Number(it.gst ?? 0),                  // ✅ GST
+      isCustomized: Boolean(it.isCustomized ?? false), // ✅ customization
       image: it.image || "",
       quantity: Math.max(1, Number(it.quantity || 1)),
     }))
@@ -31,7 +35,7 @@ const itemKey = (it) => {
   return `${base}::${variant}::${color}::${size}::${fabric}`;
 };
 
-// Helper: map server item to frontend shape
+// Helper: map server item to frontend shape (includes all fields)
 const toFrontendItem = (it) => ({
   _id: String(it._id),
   id: String(it.productId),
@@ -39,6 +43,10 @@ const toFrontendItem = (it) => ({
   attributes: it.attributes,
   name: it.name,
   price: it.price,
+  originalPrice: it.originalPrice,
+  discountPercent: it.discountPercent,
+  gst: it.gst,
+  isCustomized: it.isCustomized,
   image: it.image,
   quantity: it.quantity,
 });
@@ -98,6 +106,13 @@ exports.mergeCart = async (req, res) => {
       const key = itemKey(it);
       if (mergedMap.has(key)) {
         mergedMap.get(key).quantity += it.quantity;
+        // Optionally update price/discount if they changed (but keep original snapshot)
+        const existing = mergedMap.get(key);
+        existing.price = it.price;
+        existing.originalPrice = it.originalPrice;
+        existing.discountPercent = it.discountPercent;
+        existing.gst = it.gst;
+        existing.isCustomized = it.isCustomized;
       } else {
         mergedMap.set(key, { ...it, _id: new mongoose.Types.ObjectId() });
       }
@@ -138,7 +153,6 @@ exports.updateCartItem = async (req, res) => {
     }
 
     if (q === 0) {
-      // Remove item
       cart.items.pull(itemId);
     } else {
       item.quantity = q;

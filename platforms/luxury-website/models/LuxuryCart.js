@@ -1,4 +1,3 @@
-// models/LuxuryCart.js
 const mongoose = require("mongoose");
 
 const CartItemSchema = new mongoose.Schema(
@@ -12,7 +11,11 @@ const CartItemSchema = new mongoose.Schema(
       fabric: { type: String, default: null },
     },
     name: { type: String, required: true },
-    price: { type: Number, required: true },
+    price: { type: Number, required: true },          // final discounted price
+    originalPrice: { type: Number, default: 0 },      // original price before discount
+    discountPercent: { type: Number, default: 0 },    // product discount %
+    gst: { type: Number, default: 0 },                // ✅ GST percentage
+    isCustomized: { type: Boolean, default: false },  // ✅ customization flag
     image: { type: String, default: "" },
     quantity: { type: Number, default: 1, min: 1 },
   },

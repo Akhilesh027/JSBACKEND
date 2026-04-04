@@ -1,6 +1,56 @@
 const mongoose = require("mongoose");
 const PurchaseOrder = require("../../Admin/models/PurchaseOrder");
+// controllers/productController.js
+const Product = require("../models/Product");
 
+exports.getProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID format",
+      });
+    }
+
+    // Fetch product
+    const product = await Product.findById(id).select("name sku price imageUrl brand category manufacturer stock");
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // Optional: check if the manufacturer has access to this product
+    // if (req.user?.role === "manufacturer" && product.manufacturer.toString() !== req.user.id) {
+    //   return res.status(403).json({ success: false, message: "Access denied" });
+    // }
+
+    return res.json({
+      success: true,
+      product: {
+        _id: product._id,
+        name: product.name,
+        sku: product.sku,
+        price: product.price,
+        imageUrl: product.imageUrl,
+        brand: product.brand,
+        category: product.category,
+        stock: product.stock,
+      },
+    });
+  } catch (err) {
+    console.error("getProductById error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
 // ✅ GET orders for a manufacturer
 exports.getOrdersByManufacturer = async (req, res) => {
   try {

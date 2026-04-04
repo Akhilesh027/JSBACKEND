@@ -54,6 +54,7 @@ router.get(
   authMiddleware,
   purchaseOrderController.getOrdersByManufacturer
 );
+router.get("/api/products/:id", authMiddleware, purchaseOrderController.getProductById);
 
 // ✅ OPTIONAL: manufacturer updates order status (accept/reject/completed)
 router.put(

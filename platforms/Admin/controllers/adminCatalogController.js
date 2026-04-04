@@ -26,7 +26,9 @@ exports.getAllCatalogs = async (req, res) => {
         shortDescription: p.shortDescription || "",
         description: p.description || "",
         price: p.price,
-        discount: p.discount || 0,                     // NEW
+        discount: p.discount || 0,
+        gst: p.gst || 0,                     // ✅ ADDED
+        isCustomized: p.isCustomized || false, // ✅ ADDED
 
         deliveryTime: p.deliveryTime || "",
         tier: p.tier || "mid_range",
@@ -45,8 +47,7 @@ exports.getAllCatalogs = async (req, res) => {
     console.error("Admin getAllCatalogs error:", err);
     res.status(500).json({ success: false, message: "Failed to fetch catalogs" });
   }
-};
-exports.updateCatalogStatus = async (req, res) => {
+};exports.updateCatalogStatus = async (req, res) => {
   try {
     const { status, discount, gst, isCustomized } = req.body;
 
@@ -57,7 +58,6 @@ exports.updateCatalogStatus = async (req, res) => {
       });
     }
 
-    // Validate discount if provided
     if (discount !== undefined && (typeof discount !== 'number' || discount < 0 || discount > 100)) {
       return res.status(400).json({
         success: false,
@@ -65,7 +65,6 @@ exports.updateCatalogStatus = async (req, res) => {
       });
     }
 
-    // Validate GST if provided
     if (gst !== undefined && (typeof gst !== 'number' || gst < 0 || gst > 100)) {
       return res.status(400).json({
         success: false,
@@ -73,7 +72,6 @@ exports.updateCatalogStatus = async (req, res) => {
       });
     }
 
-    // Validate isCustomized if provided (must be boolean)
     if (isCustomized !== undefined && typeof isCustomized !== 'boolean') {
       return res.status(400).json({
         success: false,
@@ -123,8 +121,8 @@ exports.updateCatalogStatus = async (req, res) => {
         description: product.description || "",
         price: product.price,
         discount: product.discount || 0,
-        gst: product.gst || 0,                 // added
-        isCustomized: product.isCustomized || false, // added
+        gst: product.gst || 0,
+        isCustomized: product.isCustomized || false,
         deliveryTime: product.deliveryTime || "",
         tier: product.tier || "mid_range",
         status: product.status,
@@ -150,9 +148,12 @@ exports.updateCatalog = async (req, res) => {
       description,
       tier,
       deliveryTime,
-      discount,                     // NEW
+      discount,
+      gst,               // ✅ ADDED
+      isCustomized,      // ✅ ADDED
     } = req.body;
 
+    // Required fields
     if (!productName || !category || price === undefined) {
       return res.status(400).json({
         success: false,
@@ -182,6 +183,22 @@ exports.updateCatalog = async (req, res) => {
       });
     }
 
+    // ✅ Validate GST if provided
+    if (gst !== undefined && (typeof gst !== 'number' || gst < 0 || gst > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: "GST must be a number between 0 and 100",
+      });
+    }
+
+    // ✅ Validate isCustomized if provided
+    if (isCustomized !== undefined && typeof isCustomized !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: "isCustomized must be a boolean",
+      });
+    }
+
     const updateData = {
       name: String(productName).trim(),
       category: String(category).trim(),
@@ -190,7 +207,10 @@ exports.updateCatalog = async (req, res) => {
       description: description ? String(description).trim() : "",
       ...(tier ? { tier } : {}),
       ...(deliveryTime !== undefined ? { deliveryTime: String(deliveryTime).trim() } : {}),
-      ...(discount !== undefined ? { discount } : {}),       // NEW
+      ...(discount !== undefined ? { discount } : {}),
+      // ✅ NEW FIELDS
+      ...(gst !== undefined ? { gst: Number(gst) } : {}),
+      ...(isCustomized !== undefined ? { isCustomized: Boolean(isCustomized) } : {}),
     };
 
     const product = await Product.findByIdAndUpdate(req.params.id, updateData, {
@@ -222,7 +242,9 @@ exports.updateCatalog = async (req, res) => {
         shortDescription: product.shortDescription || "",
         description: product.description || "",
         price: product.price,
-        discount: product.discount || 0,                     // NEW
+        discount: product.discount || 0,
+        gst: product.gst || 0,
+        isCustomized: product.isCustomized || false,
         deliveryTime: product.deliveryTime || "",
         tier: product.tier || "mid_range",
         status: product.status || "pending",

@@ -24,6 +24,24 @@ const midRangeCartItemSchema = new mongoose.Schema(
       color: { type: String, default: null },
       fabric: { type: String, default: null },
     },
+    // ✅ NEW: product snapshot to preserve pricing, GST, customization at add time
+    productSnapshot: {
+      name: { type: String, required: true },
+      price: { type: Number, required: true },          // final discounted price (after product discount)
+      originalPrice: { type: Number, required: true }, // original price (or variant price)
+      discountPercent: { type: Number, default: 0 },   // product discount percentage
+      gst: { type: Number, default: 0 },               // GST percentage
+      isCustomized: { type: Boolean, default: false }, // customization flag
+      finalPrice: { type: Number, required: true },    // same as price, for clarity
+      image: { type: String },
+      category: { type: String },
+      inStock: { type: Boolean, default: true },
+      colors: [{ type: String }],
+      sizes: [{ type: String }],
+      fabrics: [{ type: String }],
+      material: { type: String },
+      deliveryTime: { type: String },
+    },
   },
   { _id: false }
 );

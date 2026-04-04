@@ -21,15 +21,21 @@ const CartItemSchema = new mongoose.Schema(
     // snapshot to show cart even if product changes later
     productSnapshot: {
       name: { type: String },
-      price: { type: Number },
+      price: { type: Number },                 // final discounted price (after product discount)
       originalPrice: { type: Number },
+      discount: { type: Number, default: 0 },  // product discount percentage
+      gst: { type: Number, default: 0 },       // GST percentage
+      isCustomized: { type: Boolean, default: false },
+      finalPrice: { type: Number },            // same as price, kept for clarity
       image: { type: String },
       category: { type: String },
       inStock: { type: Boolean, default: true },
       colors: [{ type: String }],
+      sizes: [{ type: String }],
+      fabrics: [{ type: String }],
     },
   },
-  { _id: false } // we already have _id in the schema itself
+  { _id: false }
 );
 
 const CartSchema = new mongoose.Schema(
