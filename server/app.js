@@ -102,22 +102,23 @@ app.options("*", cors({
 // Security headers (mostly useful if backend serves pages; safe for API too)
 app.disable("x-powered-by");
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// ✅ CORRECT ORDER
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
-  // For non‑browser requests or disallowed origins, no CORS header is sent (browser will block)
-  
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
   next();
 });
+
+// Then serve static files
+app.use('/uploads', express.static('uploads'));
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
