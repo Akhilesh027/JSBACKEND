@@ -21,9 +21,9 @@ router.get("/", getAllEstimates);
 router.patch(
   "/:id/step3",
   upload.fields([
-    { name: "planFile", maxCount: 1 },           // ✅ added
+    { name: "planFile", maxCount: 1 },
     { name: "floorplanPdf", maxCount: 1 },
-    { name: "floorplanImages", maxCount: 10 },
+    { name: "floorplanImages", maxCount: 10 }, // allow up to 10 images
   ]),
   updateStep3
 );

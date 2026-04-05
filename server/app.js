@@ -6,6 +6,8 @@ const hpp = require("hpp");
 const xss = require("xss-clean");
 const cookieParser = require("cookie-parser");
 const path = require("path"); // <-- needed for basename
+const multer = require("multer");
+
 
 // Import Routes
 const AllRoutes = require("../routes/All.routes");
@@ -64,6 +66,26 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+app.use((err, req, res, next) => {
+  // Handle Multer errors (e.g., file too large, wrong field name, file filter rejection)
+  if (err instanceof multer.MulterError) {
+    if (err.code === "FILE_TOO_LARGE") {
+      return res.status(413).json({ success: false, message: "File too large (max 10MB)" });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({ success: false, message: `Unexpected field: ${err.field}` });
+    }
+    return res.status(400).json({ success: false, message: err.message });
+  }
+
+  // Handle custom file filter errors (if you throw them in fileFilter)
+  if (err.message && err.message.includes("Only PDF and images allowed")) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+
+  // Pass other errors to default handler
+  next(err);
+});
 
 // ✅ Preflight must include same config
 app.options("*", cors({
@@ -79,6 +101,7 @@ app.options("*", cors({
 
 // Security headers (mostly useful if backend serves pages; safe for API too)
 app.disable("x-powered-by");
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use(
   helmet({

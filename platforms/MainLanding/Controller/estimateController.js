@@ -1,5 +1,5 @@
 const Estimate = require("../models/Estimate");
-const path = require("path"); // <-- needed for basename
+const path = require("path");
 
 // Helper functions
 const ok = (res, data, message = "OK") =>
@@ -30,7 +30,7 @@ exports.createEstimate = async (req, res) => {
   }
 };
 
-// ---------- Step 2: Update furniture (kitchen & wardrobe removed) ----------
+// ---------- Step 2: Update furniture ----------
 exports.updateStep2 = async (req, res) => {
   try {
     const { id } = req.params;
@@ -47,7 +47,6 @@ exports.updateStep2 = async (req, res) => {
       outdoorFurniture,
     } = req.body;
 
-    // Build update object with only the fields present in the new schema
     const updateData = {
       tvUnit: Number(tvUnit ?? 0),
       sofaSet: Number(sofaSet ?? 0),
@@ -73,10 +72,7 @@ exports.updateStep2 = async (req, res) => {
 };
 
 // ---------- Step 3: Upload floorplan details (with Cloudinary) ----------
-// This function is intended to be used with multer middleware that handles:
-//   - 'planFile' (single file)
-//   - 'floorplanPdf' (single file)
-//   - 'floorplanImages' (multiple files)
+// IMPORTANT: This controller expects multer to populate req.files via upload.fields([...])
 exports.updateStep3 = async (req, res) => {
   try {
     const { id } = req.params;
@@ -89,24 +85,24 @@ exports.updateStep3 = async (req, res) => {
     const estimate = await Estimate.findById(id);
     if (!estimate) return bad(res, 404, "Estimate not found");
 
-    // Get uploaded files from multer
+    // Access files from multer (safe: defaults to empty object/array)
     const planFile = req.files?.planFile?.[0];
     const floorplanPdf = req.files?.floorplanPdf?.[0];
     const floorplanImages = req.files?.floorplanImages || [];
 
-    // Build web‑accessible URLs (relative to the uploads folder)
-    const planFileUrl = planFile ? `/uploads/${path.basename(planFile.path)}` : null;
-    const floorplanPdfUrl = floorplanPdf ? `/uploads/${path.basename(floorplanPdf.path)}` : null;
-    const floorplanImageUrls = floorplanImages.map(img => `/uploads/${path.basename(img.path)}`);
+    // Build public URLs (relative to static 'uploads' folder)
+    const planFileUrl = planFile ? `/uploads/${planFile.filename}` : null;
+    const floorplanPdfUrl = floorplanPdf ? `/uploads/${floorplanPdf.filename}` : null;
+    const floorplanImageUrls = floorplanImages.map(img => `/uploads/${img.filename}`);
 
     // Update text fields
     estimate.plotSize = plotSize;
 
-    // Update file URLs (overwrite if new files are uploaded)
+    // Overwrite file URLs if new files are uploaded
     if (planFileUrl) estimate.planFileUrl = planFileUrl;
     if (floorplanPdfUrl) estimate.floorplanPdfUrl = floorplanPdfUrl;
 
-    // Append new images to existing ones (if any)
+    // Append new images to existing ones
     if (floorplanImageUrls.length) {
       estimate.floorplanImageUrls = [
         ...(estimate.floorplanImageUrls || []),
@@ -117,6 +113,7 @@ exports.updateStep3 = async (req, res) => {
     await estimate.save();
     return ok(res, estimate, "Step 3 updated");
   } catch (err) {
+    console.error("Step3 error:", err);
     return bad(res, 500, err.message || "Server error");
   }
 };
