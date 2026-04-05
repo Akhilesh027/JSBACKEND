@@ -102,7 +102,14 @@ app.options("*", cors({
 // Security headers (mostly useful if backend serves pages; safe for API too)
 app.disable("x-powered-by");
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://jsgallor.com');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
