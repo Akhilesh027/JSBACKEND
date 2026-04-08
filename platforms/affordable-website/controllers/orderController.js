@@ -79,7 +79,9 @@ function formatPhoneNumber(phone) {
 
 async function sendWhatsAppMessage(to, body) {
   try {
-    const apiUrl = "https://publicapi.myoperator.co/v1/whatsapp/send";
+    const apiUrl =
+      "https://publicapi.myoperator.co";
+
     const apiKey = process.env.WHATSAPP_API_KEY;
     const companyId = process.env.WHATSAPP_COMPANY_ID;
 
@@ -88,19 +90,21 @@ async function sendWhatsAppMessage(to, body) {
       return;
     }
 
-    // Format phone number (remove '+')
     const phone = to.replace("+", "");
 
     const payload = {
-      to: phone,
-      text: body,
       company_id: companyId,
+      phone_number: phone,
+      message: {
+        type: "text",
+        text: body,
+      },
     };
 
     const response = await axios.post(apiUrl, payload, {
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
+        "x-api-key": apiKey, // ✅ FIXED
       },
     });
 
@@ -111,7 +115,6 @@ async function sendWhatsAppMessage(to, body) {
     throw err;
   }
 }
-
 // -------------------- Main Controller --------------------
 
 exports.createOrder = async (req, res) => {

@@ -2,25 +2,37 @@ const mongoose = require("mongoose");
 
 const EstimateSchema = new mongoose.Schema(
   {
+    // Step 1 – Basic info
     floorplan: { type: String, required: true },
     purpose: { type: String, required: true },
     propertyType: { type: String, required: true },
 
-    // Step 2 – Furniture items (kitchen & wardrobe removed)
+    // ========== INTERIOR SERVICES (new) ==========
+    kitchen: { type: Number, default: 0 },
+    wardrobes: { type: Number, default: 0 },
+    falseCeiling: { type: Number, default: 0 },
+    electricalWorks: { type: Number, default: 0 },
+    painting: { type: Number, default: 0 },
+    curtainsBlinds: { type: Number, default: 0 },
+    wallPanelling: { type: Number, default: 0 },
+    glassPartitions: { type: Number, default: 0 },
+    lighting: { type: Number, default: 0 },
+
+    // ========== FURNITURE ITEMS ==========
     tvUnit: { type: Number, default: 0 },
     sofaSet: { type: Number, default: 0 },
     beds: { type: Number, default: 0 },
-    centerTables: { type: Number, default: 0 },
+    diningTable: { type: Number, default: 0 },
+    centerTable: { type: Number, default: 0 },
     crockeryUnit: { type: Number, default: 0 },
-    diningTableSet: { type: Number, default: 0 },
-    foyers: { type: Number, default: 0 },
+    foyerConsole: { type: Number, default: 0 },
     vanityUnit: { type: Number, default: 0 },
     studyUnit: { type: Number, default: 0 },
     outdoorFurniture: { type: Number, default: 0 },
 
     // Step 3 – Floorplan details
-    plotSize: { type: String, default: "" },          // ← NOT required
-    planFileUrl: { type: String, default: "" },       // ← new field for 2D/3D plan
+    plotSize: { type: String, default: "" },
+    planFileUrl: { type: String, default: "" },
     floorplanPdfUrl: { type: String, default: "" },
     floorplanImageUrls: { type: [String], default: [] },
 

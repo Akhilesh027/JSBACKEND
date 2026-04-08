@@ -1,14 +1,12 @@
 const Estimate = require("../models/Estimate");
-const path = require("path");
 
-// Helper functions
 const ok = (res, data, message = "OK") =>
   res.json({ success: true, message, data });
 
 const bad = (res, status, message) =>
   res.status(status).json({ success: false, message });
 
-// ---------- Step 1: Create estimate ----------
+// ---------- Step 1: Create estimate (unchanged) ----------
 exports.createEstimate = async (req, res) => {
   try {
     const { floorplan, purpose, propertyType } = req.body;
@@ -30,31 +28,53 @@ exports.createEstimate = async (req, res) => {
   }
 };
 
-// ---------- Step 2: Update furniture ----------
+// ---------- Step 2: Update BOTH interior services & furniture ----------
 exports.updateStep2 = async (req, res) => {
   try {
     const { id } = req.params;
     const {
+      // Interior services
+      kitchen,
+      wardrobes,
+      falseCeiling,
+      electricalWorks,
+      painting,
+      curtainsBlinds,
+      wallPanelling,
+      glassPartitions,
+      lighting,
+      // Furniture items
       tvUnit,
       sofaSet,
       beds,
-      centerTables,
+      diningTable,
+      centerTable,
       crockeryUnit,
-      diningTableSet,
-      foyers,
+      foyerConsole,
       vanityUnit,
       studyUnit,
       outdoorFurniture,
     } = req.body;
 
     const updateData = {
+      // Interior
+      kitchen: Number(kitchen ?? 0),
+      wardrobes: Number(wardrobes ?? 0),
+      falseCeiling: Number(falseCeiling ?? 0),
+      electricalWorks: Number(electricalWorks ?? 0),
+      painting: Number(painting ?? 0),
+      curtainsBlinds: Number(curtainsBlinds ?? 0),
+      wallPanelling: Number(wallPanelling ?? 0),
+      glassPartitions: Number(glassPartitions ?? 0),
+      lighting: Number(lighting ?? 0),
+      // Furniture
       tvUnit: Number(tvUnit ?? 0),
       sofaSet: Number(sofaSet ?? 0),
       beds: Number(beds ?? 0),
-      centerTables: Number(centerTables ?? 0),
+      diningTable: Number(diningTable ?? 0),
+      centerTable: Number(centerTable ?? 0),
       crockeryUnit: Number(crockeryUnit ?? 0),
-      diningTableSet: Number(diningTableSet ?? 0),
-      foyers: Number(foyers ?? 0),
+      foyerConsole: Number(foyerConsole ?? 0),
       vanityUnit: Number(vanityUnit ?? 0),
       studyUnit: Number(studyUnit ?? 0),
       outdoorFurniture: Number(outdoorFurniture ?? 0),
@@ -65,14 +85,13 @@ exports.updateStep2 = async (req, res) => {
     });
 
     if (!estimate) return bad(res, 404, "Estimate not found");
-    return ok(res, estimate, "Step 2 updated");
+    return ok(res, estimate, "Step 2 updated (interior + furniture)");
   } catch (err) {
     return bad(res, 500, err.message || "Server error");
   }
 };
 
-// ---------- Step 3: Upload floorplan details (with Cloudinary) ----------
-// IMPORTANT: This controller expects multer to populate req.files via upload.fields([...])
+// ---------- Step 3: Upload floorplan details (unchanged) ----------
 exports.updateStep3 = async (req, res) => {
   try {
     const { id } = req.params;
@@ -85,24 +104,17 @@ exports.updateStep3 = async (req, res) => {
     const estimate = await Estimate.findById(id);
     if (!estimate) return bad(res, 404, "Estimate not found");
 
-    // Access files from multer (safe: defaults to empty object/array)
     const planFile = req.files?.planFile?.[0];
     const floorplanPdf = req.files?.floorplanPdf?.[0];
     const floorplanImages = req.files?.floorplanImages || [];
 
-    // Build public URLs (relative to static 'uploads' folder)
     const planFileUrl = planFile ? `/uploads/${planFile.filename}` : null;
     const floorplanPdfUrl = floorplanPdf ? `/uploads/${floorplanPdf.filename}` : null;
     const floorplanImageUrls = floorplanImages.map(img => `/uploads/${img.filename}`);
 
-    // Update text fields
     estimate.plotSize = plotSize;
-
-    // Overwrite file URLs if new files are uploaded
     if (planFileUrl) estimate.planFileUrl = planFileUrl;
     if (floorplanPdfUrl) estimate.floorplanPdfUrl = floorplanPdfUrl;
-
-    // Append new images to existing ones
     if (floorplanImageUrls.length) {
       estimate.floorplanImageUrls = [
         ...(estimate.floorplanImageUrls || []),
@@ -118,7 +130,7 @@ exports.updateStep3 = async (req, res) => {
   }
 };
 
-// ---------- Step 4: Submit estimate (contact details) ----------
+// ---------- Step 4: Submit estimate (unchanged) ----------
 exports.updateStep4Submit = async (req, res) => {
   try {
     const { id } = req.params;
@@ -147,7 +159,7 @@ exports.updateStep4Submit = async (req, res) => {
   }
 };
 
-// ---------- Retrieve single estimate ----------
+// ---------- Retrieve single estimate (unchanged) ----------
 exports.getEstimateById = async (req, res) => {
   try {
     const estimate = await Estimate.findById(req.params.id);
@@ -158,7 +170,7 @@ exports.getEstimateById = async (req, res) => {
   }
 };
 
-// ---------- List estimates (with filters) ----------
+// ---------- List estimates (unchanged) ----------
 exports.getAllEstimates = async (req, res) => {
   try {
     const { status, q } = req.query;
@@ -184,7 +196,7 @@ exports.getAllEstimates = async (req, res) => {
   }
 };
 
-// ---------- Admin: update estimated/total amounts ----------
+// ---------- Admin: update estimated/total amounts (unchanged) ----------
 exports.updateEstimate = async (req, res) => {
   try {
     const { id } = req.params;
