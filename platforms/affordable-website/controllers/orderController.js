@@ -77,34 +77,67 @@ function formatPhoneNumber(phone) {
   }
 }
 
+/**
+ * Send WhatsApp message via MyOperator API
+ * @param {string} to - Phone number with country code (e.g., "+919876543210")
+ * @param {string} body - Message text
+ */
 async function sendWhatsAppMessage(to, body) {
   try {
-    const apiUrl =
-      "https://publicapi.myoperator.co";
+    const apiUrl = "https://publicapi.myoperator.co/chat/messages";
+    const apiKey = "1PxUTxN2GF8nQ1sPAd1Lsul1SnmKtdbV5dQnNNBrXT";
+    const companyId = "69a2b6fe3cc89864";
+    const phoneNumberId = "958894630648906"; // e.g., "958894630648906"
 
-    const apiKey = process.env.WHATSAPP_API_KEY;
-    const companyId = process.env.WHATSAPP_COMPANY_ID;
-
-    if (!apiKey || !companyId) {
-      console.error("❌ Missing WhatsApp env config");
+    if (!apiKey || !companyId || !phoneNumberId) {
+      console.error("❌ Missing WhatsApp env config: WHATSAPP_API_KEY, WHATSAPP_COMPANY_ID, WHATSAPP_PHONE_NUMBER_ID");
       return;
     }
 
-    const phone = to.replace("+", "");
+    // Extract country code and local number from formatted phone
+    const cleaned = to.replace(/\D/g, ""); // Remove all non-digits
+    let countryCode = "91"; // default India
+    let localNumber = cleaned;
+
+    // If number starts with country code (e.g., 91xxxxxxxxxx)
+    if (cleaned.length >= 12 && cleaned.startsWith("91")) {
+      countryCode = "91";
+      localNumber = cleaned.substring(2);
+    } else if (cleaned.length === 10) {
+      // Indian 10-digit mobile
+      countryCode = "91";
+      localNumber = cleaned;
+    } else {
+      // Fallback: treat whole as local number and assume India
+      console.warn("⚠️ Unexpected phone format, using default country code 91");
+      countryCode = "91";
+      localNumber = cleaned;
+    }
+
+    // Generate unique reference ID
+    const myopRefId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
     const payload = {
-      company_id: companyId,
-      phone_number: phone,
-      message: {
+      phone_number_id: phoneNumberId,
+      customer_country_code: countryCode,
+      customer_number: localNumber,
+      data: {
         type: "text",
-        text: body,
+        context: {
+          body: body,
+          preview_url: false,
+        },
       },
+      reply_to: null,
+      myop_ref_id: myopRefId,
     };
 
     const response = await axios.post(apiUrl, payload, {
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey, // ✅ FIXED
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "X-MYOP-COMPANY-ID": companyId,
       },
     });
 
@@ -115,6 +148,7 @@ async function sendWhatsAppMessage(to, body) {
     throw err;
   }
 }
+
 // -------------------- Main Controller --------------------
 
 exports.createOrder = async (req, res) => {
@@ -317,13 +351,11 @@ exports.createOrder = async (req, res) => {
     console.log("[DEBUG] Entering WhatsApp notification block");
 
     try {
-      // Fetch full customer data to inspect all fields
       const customer = await Customer.findById(userId).lean();
       console.log("[DEBUG] Full customer data:", customer);
 
       let phone = null;
 
-      // Try to get phone from customer first
       if (customer?.phone) {
         phone = customer.phone;
         console.log("[DEBUG] Found phone in customer:", phone);
@@ -335,7 +367,6 @@ exports.createOrder = async (req, res) => {
         console.log("[DEBUG] Found phoneNumber in customer:", phone);
       }
 
-      // If still no phone, try to get it from the address
       if (!phone && address) {
         if (address.phone) {
           phone = address.phone;
@@ -354,7 +385,6 @@ exports.createOrder = async (req, res) => {
         console.log("[DEBUG] Formatted phone number:", formattedPhone);
 
         if (formattedPhone) {
-          // Build a more detailed order confirmation message
           const itemList = normalizedItems
             .map(item => `${item.productSnapshot?.name || 'Item'} x${item.quantity}`)
             .join('\n');

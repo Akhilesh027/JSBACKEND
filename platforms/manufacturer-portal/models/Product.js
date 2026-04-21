@@ -33,6 +33,11 @@ const productSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
+    priceIncludesGst: {
+  type: Boolean,
+  default: false,   // false = stored price is exclusive of GST
+},
+
     isCustomized: {
     type: Boolean,
     default: false,

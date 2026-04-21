@@ -264,9 +264,6 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-/** -----------------------------
- * GET ALL PRODUCTS (manufacturer-wise)
- * ---------------------------- */
 exports.getAllProducts = async (req, res) => {
   try {
     if (req.user.role !== "manufacturer") {
@@ -281,9 +278,6 @@ exports.getAllProducts = async (req, res) => {
   }
 };
 
-/** -----------------------------
- * GET SINGLE PRODUCT (manufacturer-wise)
- * ---------------------------- */
 exports.getProduct = async (req, res) => {
   try {
     if (req.user.role !== "manufacturer") {

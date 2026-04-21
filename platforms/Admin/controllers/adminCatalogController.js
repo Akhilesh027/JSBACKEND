@@ -27,8 +27,9 @@ exports.getAllCatalogs = async (req, res) => {
         description: p.description || "",
         price: p.price,
         discount: p.discount || 0,
-        gst: p.gst || 0,                     // ✅ ADDED
-        isCustomized: p.isCustomized || false, // ✅ ADDED
+        gst: p.gst || 0,
+        isCustomized: p.isCustomized || false,
+        priceIncludesGst: p.priceIncludesGst || false,   // ✅ ADDED – return stored flag
 
         deliveryTime: p.deliveryTime || "",
         tier: p.tier || "mid_range",
@@ -47,7 +48,8 @@ exports.getAllCatalogs = async (req, res) => {
     console.error("Admin getAllCatalogs error:", err);
     res.status(500).json({ success: false, message: "Failed to fetch catalogs" });
   }
-};exports.updateCatalogStatus = async (req, res) => {
+};
+exports.updateCatalogStatus = async (req, res) => {
   try {
     const { status, discount, gst, isCustomized } = req.body;
 
@@ -138,6 +140,7 @@ exports.getAllCatalogs = async (req, res) => {
   }
 };
 // PUT /api/admin/catalogs/:id
+// PUT /api/admin/catalogs/:id
 exports.updateCatalog = async (req, res) => {
   try {
     const {
@@ -149,11 +152,12 @@ exports.updateCatalog = async (req, res) => {
       tier,
       deliveryTime,
       discount,
-      gst,               // ✅ ADDED
-      isCustomized,      // ✅ ADDED
+      gst,
+      isCustomized,
+      priceIncludesGst,     // ✅ NEW: flag indicating if the provided price includes GST
     } = req.body;
 
-    // Required fields
+    // 1. Required fields validation
     if (!productName || !category || price === undefined) {
       return res.status(400).json({
         success: false,
@@ -161,13 +165,15 @@ exports.updateCatalog = async (req, res) => {
       });
     }
 
-    if (Number(price) <= 0) {
+    const priceNum = Number(price);
+    if (isNaN(priceNum) || priceNum <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Price must be greater than 0",
+        message: "Price must be a positive number",
       });
     }
 
+    // 2. Tier validation
     if (tier && !["affordable", "mid_range", "luxury"].includes(tier)) {
       return res.status(400).json({
         success: false,
@@ -175,23 +181,25 @@ exports.updateCatalog = async (req, res) => {
       });
     }
 
-    // Validate discount if provided
-    if (discount !== undefined && (typeof discount !== 'number' || discount < 0 || discount > 100)) {
+    // 3. Discount validation
+    let discountNum = discount !== undefined ? Number(discount) : undefined;
+    if (discountNum !== undefined && (isNaN(discountNum) || discountNum < 0 || discountNum > 100)) {
       return res.status(400).json({
         success: false,
         message: "Discount must be a number between 0 and 100",
       });
     }
 
-    // ✅ Validate GST if provided
-    if (gst !== undefined && (typeof gst !== 'number' || gst < 0 || gst > 100)) {
+    // 4. GST validation
+    let gstNum = gst !== undefined ? Number(gst) : undefined;
+    if (gstNum !== undefined && (isNaN(gstNum) || gstNum < 0 || gstNum > 100)) {
       return res.status(400).json({
         success: false,
         message: "GST must be a number between 0 and 100",
       });
     }
 
-    // ✅ Validate isCustomized if provided
+    // 5. isCustomized validation
     if (isCustomized !== undefined && typeof isCustomized !== 'boolean') {
       return res.status(400).json({
         success: false,
@@ -199,20 +207,30 @@ exports.updateCatalog = async (req, res) => {
       });
     }
 
+    // 6. priceIncludesGst validation (optional)
+    if (priceIncludesGst !== undefined && typeof priceIncludesGst !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: "priceIncludesGst must be a boolean",
+      });
+    }
+
+    // 7. Build update object
     const updateData = {
-      name: String(productName).trim(),
-      category: String(category).trim(),
-      price: Number(price),
-      shortDescription: shortDescription ? String(shortDescription).trim() : "",
-      description: description ? String(description).trim() : "",
-      ...(tier ? { tier } : {}),
-      ...(deliveryTime !== undefined ? { deliveryTime: String(deliveryTime).trim() } : {}),
-      ...(discount !== undefined ? { discount } : {}),
-      // ✅ NEW FIELDS
-      ...(gst !== undefined ? { gst: Number(gst) } : {}),
-      ...(isCustomized !== undefined ? { isCustomized: Boolean(isCustomized) } : {}),
+      name: productName.trim(),
+      category: category.trim(),
+      price: priceNum,                 // Already exclusive if frontend converted it
+      shortDescription: shortDescription ? shortDescription.trim() : "",
+      description: description ? description.trim() : "",
+      ...(tier && { tier }),
+      ...(deliveryTime !== undefined && { deliveryTime: deliveryTime.trim() }),
+      ...(discountNum !== undefined && { discount: discountNum }),
+      ...(gstNum !== undefined && { gst: gstNum }),
+      ...(isCustomized !== undefined && { isCustomized }),
+      ...(priceIncludesGst !== undefined && { priceIncludesGst }),
     };
 
+    // 8. Perform update
     const product = await Product.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
@@ -222,6 +240,7 @@ exports.updateCatalog = async (req, res) => {
       return res.status(404).json({ success: false, message: "Catalog not found" });
     }
 
+    // 9. Format manufacturer name for response
     const m = product.manufacturer;
     const manufacturerName =
       m?.fullName ||
@@ -230,6 +249,7 @@ exports.updateCatalog = async (req, res) => {
       m?.email ||
       "Unknown";
 
+    // 10. Return updated catalog
     res.json({
       success: true,
       message: "Catalog updated",
@@ -245,6 +265,7 @@ exports.updateCatalog = async (req, res) => {
         discount: product.discount || 0,
         gst: product.gst || 0,
         isCustomized: product.isCustomized || false,
+        priceIncludesGst: product.priceIncludesGst || false,   // ✅ included in response
         deliveryTime: product.deliveryTime || "",
         tier: product.tier || "mid_range",
         status: product.status || "pending",
@@ -259,7 +280,6 @@ exports.updateCatalog = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update catalog" });
   }
 };
-
 // DELETE /api/admin/catalogs/:id
 exports.deleteCatalog = async (req, res) => {
   try {
