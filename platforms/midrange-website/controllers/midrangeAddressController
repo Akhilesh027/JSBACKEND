@@ -1,8 +1,9 @@
 // controllers/midrangeAddressController.js
 const MidrangeAddress = require("../models/MidrangeAddress");
 
-const WEBSITE = "mid_range";
+const WEBSITE = "mid_range"; // consistent with your model
 
+// GET all addresses for the authenticated user
 exports.getMyAddresses = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -17,6 +18,7 @@ exports.getMyAddresses = async (req, res) => {
   }
 };
 
+// CREATE a new address
 exports.addAddress = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -36,7 +38,7 @@ exports.addAddress = async (req, res) => {
       return res.status(400).json({ message: "Missing required address fields" });
     }
 
-    // if isDefault -> unset previous defaults
+    // If this new address is default, unset previous defaults
     if (isDefault) {
       await MidrangeAddress.updateMany(
         { userId, website: WEBSITE, isDefault: true },
@@ -58,17 +60,79 @@ exports.addAddress = async (req, res) => {
       isDefault: !!isDefault,
     });
 
-    return res.json({ data: created, message: "Address saved" });
+    return res.status(201).json({ data: created, message: "Address saved" });
   } catch (err) {
     return res.status(500).json({ message: err.message || "Server error" });
   }
 };
 
+// UPDATE an existing address (full or partial)
+exports.updateAddress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;  // address _id
+    const updates = req.body;
+
+    // Allowed fields to update
+    const allowedFields = [
+      "fullName", "phone", "line1", "line2", "landmark",
+      "city", "state", "pincode", "isDefault"
+    ];
+    const filteredUpdates = {};
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        filteredUpdates[field] = updates[field];
+      }
+    }
+
+    // Find the address and ensure it belongs to the user
+    const address = await MidrangeAddress.findOne({ _id: id, userId, website: WEBSITE });
+    if (!address) {
+      return res.status(404).json({ message: "Address not found" });
+    }
+
+    // If setting isDefault to true, unset previous default addresses
+    if (filteredUpdates.isDefault === true) {
+      await MidrangeAddress.updateMany(
+        { userId, website: WEBSITE, isDefault: true, _id: { $ne: id } },
+        { $set: { isDefault: false } }
+      );
+    }
+
+    // Apply updates
+    Object.assign(address, filteredUpdates);
+    await address.save();
+
+    return res.json({ data: address, message: "Address updated" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+
+// DELETE an address
+exports.deleteAddress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const address = await MidrangeAddress.findOneAndDelete({ _id: id, userId, website: WEBSITE });
+    if (!address) {
+      return res.status(404).json({ message: "Address not found" });
+    }
+
+    return res.json({ message: "Address deleted successfully" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message || "Server error" });
+  }
+};
+
+// (Optional) Explicit endpoint to set a specific address as default
 exports.setDefault = async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
 
+    // Unset current default
     await MidrangeAddress.updateMany(
       { userId, website: WEBSITE, isDefault: true },
       { $set: { isDefault: false } }
@@ -79,6 +143,10 @@ exports.setDefault = async (req, res) => {
       { $set: { isDefault: true } },
       { new: true }
     ).lean();
+
+    if (!updated) {
+      return res.status(404).json({ message: "Address not found" });
+    }
 
     return res.json({ data: updated, message: "Default address updated" });
   } catch (err) {

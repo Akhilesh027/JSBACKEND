@@ -36,6 +36,8 @@ router.delete("/api/midrange/cart", midrangeAuthMiddleware, cartController.clear
 router.get("/api/midrange/addresses", midrangeAuthMiddleware, addressController.getMyAddresses);
 router.post("/api/midrange/addresses", midrangeAuthMiddleware, addressController.addAddress);
 router.patch("/api/midrange/addresses/:id/default", midrangeAuthMiddleware, addressController.setDefault);
+router.put("/api/midrange/addresses/:id", midrangeAuthMiddleware, addressController.updateAddress);   // 🔁 edit address
+router.delete("/api/midrange/addresses/:id", midrangeAuthMiddleware, addressController.deleteAddress); // 🗑️ delete address
 
 // orders
 router.post("/api/midrange/orders", midrangeAuthMiddleware, orderController.placeOrder);
