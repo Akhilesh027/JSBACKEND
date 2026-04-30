@@ -32,7 +32,12 @@ const midRangeCartItemSchema = new mongoose.Schema(
       discountPercent: { type: Number, default: 0 },   // product discount percentage
       gst: { type: Number, default: 0 },               // GST percentage
       isCustomized: { type: Boolean, default: false }, // customization flag
-      finalPrice: { type: Number, required: true },    // same as price, for clarity
+      finalPrice: { type: Number, required: true }, 
+        priceIncludesGst: {
+  type: Boolean,
+  default: true,
+},
+   // same as price, for clarity
       image: { type: String },
       category: { type: String },
       inStock: { type: Boolean, default: true },
