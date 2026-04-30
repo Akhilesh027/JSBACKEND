@@ -25,7 +25,8 @@ const productSchema = new mongoose.Schema(
     shortDescription: { type: String, maxlength: 150, trim: true },
     description: { type: String, trim: true },
     price: { type: Number, required: true, min: 0 },
-    discount: { type: Number, default: 0, min: 0, max: 100 },      // NEW: discount percentage
+    discount: { type: Number, default: 0, min: 0, max: 100 },  
+        // NEW: discount percentage
     quantity: { type: Number, default: 0, min: 0 },
       gst: {
       type: Number,
@@ -35,7 +36,7 @@ const productSchema = new mongoose.Schema(
     },
     priceIncludesGst: {
   type: Boolean,
-  default: false,   // false = stored price is exclusive of GST
+  default: true,
 },
 
     isCustomized: {
