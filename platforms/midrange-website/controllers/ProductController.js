@@ -25,6 +25,7 @@ exports.getProducts = async (req, res) => {
     const {
       search,
       category,
+      subcategory,
       material,
       color,
       availability,
@@ -36,19 +37,17 @@ exports.getProducts = async (req, res) => {
       limit = 12,
     } = req.query;
 
-    // ✅ forced filters (midrange website shows ONLY these)
     const query = {
       tier: FORCED_TIER,
       status: FORCED_STATUS,
     };
 
-    // Optional filters
     if (category) query.category = category;
+    if (subcategory) query.subcategory = subcategory;
     if (material) query.material = material;
     if (color) query.color = color;
     if (availability) query.availability = availability;
 
-    // manufacturer ObjectId
     if (manufacturer) {
       if (!mongoose.Types.ObjectId.isValid(manufacturer)) {
         return res.status(400).json({ message: "Invalid manufacturer id" });
@@ -56,29 +55,33 @@ exports.getProducts = async (req, res) => {
       query.manufacturer = manufacturer;
     }
 
-    // price range
     if (minPrice !== undefined || maxPrice !== undefined) {
       query.price = {};
-      if (minPrice !== undefined && String(minPrice).trim() !== "")
+
+      if (minPrice !== undefined && String(minPrice).trim() !== "") {
         query.price.$gte = Number(minPrice);
-      if (maxPrice !== undefined && String(maxPrice).trim() !== "")
+      }
+
+      if (maxPrice !== undefined && String(maxPrice).trim() !== "") {
         query.price.$lte = Number(maxPrice);
+      }
     }
 
-    // search (name + category + material + color + sku)
     if (search && String(search).trim()) {
       const term = String(search).trim();
+
       query.$or = [
         { name: { $regex: term, $options: "i" } },
         { category: { $regex: term, $options: "i" } },
+        { subcategory: { $regex: term, $options: "i" } },
         { material: { $regex: term, $options: "i" } },
         { color: { $regex: term, $options: "i" } },
         { sku: { $regex: term, $options: "i" } },
       ];
     }
 
-    // sorting
     let sortObj = { createdAt: -1 };
+
     if (sort === "price_asc") sortObj = { price: 1 };
     if (sort === "price_desc") sortObj = { price: -1 };
     if (sort === "name_asc") sortObj = { name: 1 };
@@ -104,10 +107,11 @@ exports.getProducts = async (req, res) => {
       },
     });
   } catch (err) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    return res.status(500).json({
+      message: err.message || "Server error",
+    });
   }
 };
-
 /**
  * GET /api/midrange/products/:id
  * ✅ must also enforce mid_range + approved
