@@ -14,7 +14,11 @@ const CartItemSchema = new mongoose.Schema(
     price: { type: Number, required: true },          // final discounted price
     originalPrice: { type: Number, default: 0 },      // original price before discount
     discountPercent: { type: Number, default: 0 },    // product discount %
-    gst: { type: Number, default: 0 },                // ✅ GST percentage
+    gst: { type: Number, default: 0 },   
+    priceIncludesGst: {
+  type: Boolean,
+  default: true,
+},             // ✅ GST percentage
     isCustomized: { type: Boolean, default: false },  // ✅ customization flag
     image: { type: String, default: "" },
     quantity: { type: Number, default: 1, min: 1 },
