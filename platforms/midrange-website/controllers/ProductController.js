@@ -5,21 +5,6 @@ const Product = require("../../manufacturer-portal/models/Product");
 const FORCED_TIER = "mid_range";
 const FORCED_STATUS = "approved";
 
-/**
- * GET /api/midrange/products
- * Query:
- *  search=chair
- *  category=sofa
- *  material=wood
- *  color=Black
- *  availability=In Stock
- *  manufacturer=<ObjectId>
- *  minPrice=100
- *  maxPrice=1000
- *  sort=latest|price_asc|price_desc|name_asc|name_desc
- *  page=1
- *  limit=12
- */
 exports.getProducts = async (req, res) => {
   try {
     const {

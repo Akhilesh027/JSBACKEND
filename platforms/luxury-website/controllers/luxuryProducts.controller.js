@@ -7,23 +7,40 @@ const LuxuryProduct = require("../../manufacturer-portal/models/Product"); // âœ
 exports.getApprovedLuxuryProducts = async (req, res) => {
   try {
     const { category, subcategory, limit = 200 } = req.query;
-    const filter = { status: "approved", tier: "luxury" };
-    
-    if (category) filter.category = category;
-    if (subcategory) filter.subcategory = subcategory;
-    
+
+    const filter = {
+      status: "approved",
+      tier: "luxury",
+    };
+
+    if (category && String(category).trim() !== "") {
+      filter.category = String(category).trim();
+    }
+
+    if (subcategory && String(subcategory).trim() !== "") {
+      filter.subcategory = String(subcategory).trim();
+    }
+
+    const safeLimit = Math.min(500, Math.max(1, Number(limit) || 200));
+
     const products = await LuxuryProduct.find(filter)
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .select("title name images image price oldPrice newPrice discount type category subcategory status tier createdAt");
-    
+      .limit(safeLimit)
+      .select(
+        "title name images image price oldPrice newPrice discount type category subcategory status tier createdAt"
+      )
+      .lean();
+
     return res.status(200).json({
       success: true,
       products,
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ success: false, message: "Failed to load products" });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load products",
+    });
   }
 };
 exports.getApprovedLuxuryProductById = async (req, res) => {
