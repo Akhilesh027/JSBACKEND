@@ -10,6 +10,8 @@ const {
   getEstimateById,
   getAllEstimates,
   updateEstimate,
+  viewEstimateFile,
+  downloadEstimateFile
 } = require("../Controller/estimateController.js");
 
 const {upload} = require("../middleware/upload.js"); // ✅ direct import (no destructuring)
@@ -17,7 +19,8 @@ const {upload} = require("../middleware/upload.js"); // ✅ direct import (no de
 router.post("/", createEstimate);
 router.patch("/:id/step2", updateStep2);
 router.get("/", getAllEstimates);
-
+router.get("/api/estimates/files/view/:filename", viewEstimateFile);
+router.get("/api/estimates/files/download/:filename", downloadEstimateFile);
 router.patch(
   "/:id/step3",
   upload.fields([

@@ -1,4 +1,6 @@
 const Estimate = require("../models/Estimate");
+const path = require("path");
+const fs = require("fs");
 
 const ok = (res, data, message = "OK") =>
   res.json({ success: true, message, data });
@@ -6,7 +8,45 @@ const ok = (res, data, message = "OK") =>
 const bad = (res, status, message) =>
   res.status(status).json({ success: false, message });
 
-// ---------- Step 1: Create estimate (unchanged) ----------
+const fileViewUrl = (filename) => `/api/estimates/files/view/${filename}`;
+const fileDownloadUrl = (filename) => `/api/estimates/files/download/${filename}`;
+
+const getSafeFilePath = (filename) => {
+  const safeName = path.basename(filename);
+  return path.join(__dirname, "../uploads", safeName);
+};
+
+// ---------- View uploaded file ----------
+exports.viewEstimateFile = async (req, res) => {
+  try {
+    const filePath = getSafeFilePath(req.params.filename);
+
+    if (!fs.existsSync(filePath)) {
+      return bad(res, 404, "File not found");
+    }
+
+    return res.sendFile(filePath);
+  } catch (err) {
+    return bad(res, 500, err.message || "Failed to view file");
+  }
+};
+
+// ---------- Download uploaded file ----------
+exports.downloadEstimateFile = async (req, res) => {
+  try {
+    const filePath = getSafeFilePath(req.params.filename);
+
+    if (!fs.existsSync(filePath)) {
+      return bad(res, 404, "File not found");
+    }
+
+    return res.download(filePath);
+  } catch (err) {
+    return bad(res, 500, err.message || "Failed to download file");
+  }
+};
+
+// ---------- Step 1: Create estimate ----------
 exports.createEstimate = async (req, res) => {
   try {
     const { floorplan, purpose, propertyType } = req.body;
@@ -28,70 +68,51 @@ exports.createEstimate = async (req, res) => {
   }
 };
 
-// ---------- Step 2: Update BOTH interior services & furniture ----------
+// ---------- Step 2 ----------
 exports.updateStep2 = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      // Interior services
-      kitchen,
-      wardrobes,
-      falseCeiling,
-      electricalWorks,
-      painting,
-      curtainsBlinds,
-      wallPanelling,
-      glassPartitions,
-      lighting,
-      // Furniture items
-      tvUnit,
-      sofaSet,
-      beds,
-      diningTable,
-      centerTable,
-      crockeryUnit,
-      foyerConsole,
-      vanityUnit,
-      studyUnit,
-      outdoorFurniture,
-    } = req.body;
 
-    const updateData = {
-      // Interior
-      kitchen: Number(kitchen ?? 0),
-      wardrobes: Number(wardrobes ?? 0),
-      falseCeiling: Number(falseCeiling ?? 0),
-      electricalWorks: Number(electricalWorks ?? 0),
-      painting: Number(painting ?? 0),
-      curtainsBlinds: Number(curtainsBlinds ?? 0),
-      wallPanelling: Number(wallPanelling ?? 0),
-      glassPartitions: Number(glassPartitions ?? 0),
-      lighting: Number(lighting ?? 0),
-      // Furniture
-      tvUnit: Number(tvUnit ?? 0),
-      sofaSet: Number(sofaSet ?? 0),
-      beds: Number(beds ?? 0),
-      diningTable: Number(diningTable ?? 0),
-      centerTable: Number(centerTable ?? 0),
-      crockeryUnit: Number(crockeryUnit ?? 0),
-      foyerConsole: Number(foyerConsole ?? 0),
-      vanityUnit: Number(vanityUnit ?? 0),
-      studyUnit: Number(studyUnit ?? 0),
-      outdoorFurniture: Number(outdoorFurniture ?? 0),
-    };
+    const fields = [
+      "kitchen",
+      "wardrobes",
+      "falseCeiling",
+      "electricalWorks",
+      "painting",
+      "curtainsBlinds",
+      "wallPanelling",
+      "glassPartitions",
+      "lighting",
+      "tvUnit",
+      "sofaSet",
+      "beds",
+      "diningTable",
+      "centerTable",
+      "crockeryUnit",
+      "foyerConsole",
+      "vanityUnit",
+      "studyUnit",
+      "outdoorFurniture",
+    ];
+
+    const updateData = {};
+    fields.forEach((field) => {
+      updateData[field] = Number(req.body[field] ?? 0);
+    });
 
     const estimate = await Estimate.findByIdAndUpdate(id, updateData, {
       new: true,
     });
 
     if (!estimate) return bad(res, 404, "Estimate not found");
-    return ok(res, estimate, "Step 2 updated (interior + furniture)");
+
+    return ok(res, estimate, "Step 2 updated");
   } catch (err) {
     return bad(res, 500, err.message || "Server error");
   }
 };
 
-// ---------- Step 3: Upload floorplan details (unchanged) ----------
+// ---------- Step 3 ----------
 exports.updateStep3 = async (req, res) => {
   try {
     const { id } = req.params;
@@ -108,21 +129,37 @@ exports.updateStep3 = async (req, res) => {
     const floorplanPdf = req.files?.floorplanPdf?.[0];
     const floorplanImages = req.files?.floorplanImages || [];
 
-    const planFileUrl = planFile ? `/uploads/${planFile.filename}` : null;
-    const floorplanPdfUrl = floorplanPdf ? `/uploads/${floorplanPdf.filename}` : null;
-    const floorplanImageUrls = floorplanImages.map(img => `/uploads/${img.filename}`);
+    if (planFile) {
+      estimate.planFileUrl = fileViewUrl(planFile.filename);
+      estimate.planFileDownloadUrl = fileDownloadUrl(planFile.filename);
+    }
 
-    estimate.plotSize = plotSize;
-    if (planFileUrl) estimate.planFileUrl = planFileUrl;
-    if (floorplanPdfUrl) estimate.floorplanPdfUrl = floorplanPdfUrl;
-    if (floorplanImageUrls.length) {
+    if (floorplanPdf) {
+      estimate.floorplanPdfUrl = fileViewUrl(floorplanPdf.filename);
+      estimate.floorplanPdfDownloadUrl = fileDownloadUrl(floorplanPdf.filename);
+    }
+
+    if (floorplanImages.length) {
+      const imageViewUrls = floorplanImages.map((img) => fileViewUrl(img.filename));
+      const imageDownloadUrls = floorplanImages.map((img) =>
+        fileDownloadUrl(img.filename)
+      );
+
       estimate.floorplanImageUrls = [
         ...(estimate.floorplanImageUrls || []),
-        ...floorplanImageUrls,
+        ...imageViewUrls,
+      ];
+
+      estimate.floorplanImageDownloadUrls = [
+        ...(estimate.floorplanImageDownloadUrls || []),
+        ...imageDownloadUrls,
       ];
     }
 
+    estimate.plotSize = plotSize;
+
     await estimate.save();
+
     return ok(res, estimate, "Step 3 updated");
   } catch (err) {
     console.error("Step3 error:", err);
@@ -130,7 +167,7 @@ exports.updateStep3 = async (req, res) => {
   }
 };
 
-// ---------- Step 4: Submit estimate (unchanged) ----------
+// ---------- Step 4 ----------
 exports.updateStep4Submit = async (req, res) => {
   try {
     const { id } = req.params;
@@ -153,24 +190,26 @@ exports.updateStep4Submit = async (req, res) => {
     );
 
     if (!estimate) return bad(res, 404, "Estimate not found");
+
     return ok(res, estimate, "Estimate submitted");
   } catch (err) {
     return bad(res, 500, err.message || "Server error");
   }
 };
 
-// ---------- Retrieve single estimate (unchanged) ----------
+// ---------- Get single ----------
 exports.getEstimateById = async (req, res) => {
   try {
     const estimate = await Estimate.findById(req.params.id);
     if (!estimate) return bad(res, 404, "Estimate not found");
+
     return ok(res, estimate, "Estimate fetched");
   } catch (err) {
     return bad(res, 500, err.message || "Server error");
   }
 };
 
-// ---------- List estimates (unchanged) ----------
+// ---------- List ----------
 exports.getAllEstimates = async (req, res) => {
   try {
     const { status, q } = req.query;
@@ -190,21 +229,28 @@ exports.getAllEstimates = async (req, res) => {
     }
 
     const list = await Estimate.find(filter).sort({ createdAt: -1 });
+
     return ok(res, list, "Estimates fetched");
   } catch (err) {
     return bad(res, 500, err.message || "Server error");
   }
 };
 
-// ---------- Admin: update estimated/total amounts (unchanged) ----------
+// ---------- Admin amount update ----------
 exports.updateEstimate = async (req, res) => {
   try {
     const { id } = req.params;
     const { estimatedAmount, totalAmount } = req.body;
 
     const update = {};
-    if (estimatedAmount !== undefined) update.estimatedAmount = Number(estimatedAmount);
-    if (totalAmount !== undefined) update.totalAmount = Number(totalAmount);
+
+    if (estimatedAmount !== undefined) {
+      update.estimatedAmount = Number(estimatedAmount);
+    }
+
+    if (totalAmount !== undefined) {
+      update.totalAmount = Number(totalAmount);
+    }
 
     const estimate = await Estimate.findByIdAndUpdate(id, update, {
       new: true,
