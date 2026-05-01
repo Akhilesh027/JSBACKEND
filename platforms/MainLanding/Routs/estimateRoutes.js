@@ -11,28 +11,35 @@ const {
   getAllEstimates,
   updateEstimate,
   viewEstimateFile,
-  downloadEstimateFile
+  downloadEstimateFile,
 } = require("../Controller/estimateController.js");
 
-const {upload} = require("../middleware/upload.js"); // ✅ direct import (no destructuring)
+const { upload } = require("../middleware/upload.js");
 
+// file routes first
+router.get("/files/view/:filename", viewEstimateFile);
+router.get("/files/download/:filename", downloadEstimateFile);
+
+// estimate routes
 router.post("/", createEstimate);
-router.patch("/:id/step2", updateStep2);
 router.get("/", getAllEstimates);
-router.get("/api/estimates/files/view/:filename", viewEstimateFile);
-router.get("/api/estimates/files/download/:filename", downloadEstimateFile);
+
+router.patch("/:id/step2", updateStep2);
+
 router.patch(
   "/:id/step3",
   upload.fields([
     { name: "planFile", maxCount: 1 },
     { name: "floorplanPdf", maxCount: 1 },
-    { name: "floorplanImages", maxCount: 10 }, // allow up to 10 images
+    { name: "floorplanImages", maxCount: 10 },
   ]),
   updateStep3
 );
 
 router.patch("/:id/step4", updateStep4Submit);
-router.get("/:id", getEstimateById);
 router.patch("/amount/:id", updateEstimate);
+
+// keep dynamic route last
+router.get("/:id", getEstimateById);
 
 module.exports = router;
