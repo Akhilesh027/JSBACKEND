@@ -1,0 +1,72 @@
+const mongoose = require("mongoose");
+
+const estimationSchema = new mongoose.Schema(
+  {
+    vendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      required: true,
+    },
+
+    projectName: String,
+    estimatedCost: String,
+    description: String,
+    clientName: String,
+    location: String,
+    priority: String,
+    vendorType: String,
+    step: String,
+
+    userDetails: {
+      clientName: String,
+      companyName: String,
+      phone: String,
+      email: String,
+      address: String,
+    },
+
+    quotationDetails: {
+      quotationNumber: String,
+      quotationDate: String,
+      validTill: String,
+      quotationAmount: String,
+      notes: String,
+    },
+
+    finalOrder: {
+      updatedDetails: String,
+      currentStage: String,
+      estimationCost: String,
+      description: String,
+      stages: String,
+    },
+
+    updatesSection: {
+      updateType: String,
+      progressTitle: String,
+      progressNote: String,
+      nextAction: String,
+      followUpDate: String,
+      progressPercent: Number,
+    },
+
+    closingSection: {
+      closingSummary: String,
+      closingRequirements: String,
+      currentStage: String,
+      handoverDone: Boolean,
+      paymentClosed: Boolean,
+      clientApproved: Boolean,
+      supportShared: Boolean,
+    },
+
+    estimationDocument: String,
+    quotationDocument: String,
+    finalOrderImages: [String],
+    updateAttachments: [String],
+    closingImages: [String],
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model("Estimation", estimationSchema);

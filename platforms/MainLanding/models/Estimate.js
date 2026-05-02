@@ -17,7 +17,12 @@ const EstimateSchema = new mongoose.Schema(
     wallPanelling: { type: Number, default: 0 },
     glassPartitions: { type: Number, default: 0 },
     lighting: { type: Number, default: 0 },
-
+budgetRange: {
+  type: String,
+  trim: true,
+  // optional enum:
+  enum: ['5-7 Lakhs', '7-10 Lakhs', '10-15 Lakhs', '15-20 Lakhs']
+},
     // ========== FURNITURE ITEMS ==========
     tvUnit: { type: Number, default: 0 },
     sofaSet: { type: Number, default: 0 },

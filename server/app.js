@@ -76,6 +76,7 @@ app.use((err, req, res, next) => {
 // Security (helmet + hpp)
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(hpp());
+app.use('/uploads', express.static('uploads'));
 
 // Routes
 app.use("/", AllRoutes);

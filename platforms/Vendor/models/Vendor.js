@@ -1,45 +1,56 @@
 const mongoose = require("mongoose");
+const portfolioSchema = new mongoose.Schema({
+  videos: [{
+    title: { type: String, required: true },
+    url: { type: String, required: true }, // can be YouTube embed URL or file path
+    uploadedAt: { type: Date, default: Date.now }
+  }],
+  images: [{
+    title: { type: String, default: "Portfolio Image" },
+    url: { type: String, required: true },
+    uploadedAt: { type: Date, default: Date.now }
+  }],
+  testimonials: [{
+    name: { type: String, required: true },
+    role: { type: String, required: true },
+    review: { type: String, required: true }
+  }],
+  stats: {
+    projectsDelivered: { type: String, default: "120+" },
+    yearsExperience: { type: String, default: "10+" },
+    partners: { type: String, default: "25+" },
+    satisfaction: { type: String, default: "100%" }
+  }
+}, { _id: false });
 
 const vendorSchema = new mongoose.Schema(
   {
-    companyName: { type: String, required: true, trim: true },
-    legalName: { type: String, required: true, trim: true },
-password: { type: String, required: true },
-    companyType: { type: String, required: true, trim: true },
-    telephone: { type: String, default: "", trim: true },
-    mobile: { type: String, required: true, trim: true },
-    email: { type: String, required: true, trim: true, lowercase: true },
+    vendorName: { type: String, required: true },
+    businessName: { type: String, required: true },
+    gstNo: { type: String, default: "" },
+    businessType: { type: String, default: "" },
+    email: { type: String, required: true, unique: true, lowercase: true },
+    phone: { type: String, required: true, unique: true },
+    password: { type: String, required: true }, // hashed
+    location: { type: String, required: true },
+    yearsExp: { type: Number, default: 0 },
+    category: { type: String, required: true },
+    servicesOffered: { type: String, default: "" },
+    projectsCompleted: { type: Number, default: 0 },
+    projectNames: { type: String, default: "" },
+    previousWork: { type: String, default: "" },
+    professionalExpertise: { type: String, default: "" },
+    businessDesc: { type: String, required: true },
+    portfolioFiles: [{ type: String }], // file paths or URLs
+    productImages: [{ type: String }],
+ portfolio: {
+    type: portfolioSchema,
+    default: () => ({})
+  },
 
-    country: { type: String, required: true, trim: true },
-    city: { type: String, required: true, trim: true },
-
-    businessNature: { type: String, required: true, trim: true },
-    estYear: { type: Number, required: true },
-
-    relation: { type: String, required: true, trim: true },
-    employees: { type: String, required: true, trim: true },
-
-    pan: { type: String, required: true, trim: true, uppercase: true },
-    gst: { type: String, required: true, trim: true, uppercase: true },
-
-    items: { type: String, required: true, trim: true },
-
-    legalDisputes: { type: String, required: true, trim: true },
-    exportCountries: { type: String, required: true, trim: true },
-    description: { type: String, required: true, trim: true },
-
-    documentUrl: { type: String, default: "" },
-
-    status: {
-      type: String,
-      enum: ["pending", "approved", "rejected"],
-      default: "pending",
-    },
+    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
   },
   { timestamps: true }
 );
-
-vendorSchema.index({ email: 1 }, { unique: true });
-vendorSchema.index({ mobile: 1 }, { unique: true });
 
 module.exports = mongoose.model("Vendor", vendorSchema);

@@ -1,76 +1,70 @@
+// routes/vendorRoutes.js
 const express = require("express");
-const { registerVendor, listVendors, loginVendor, getVendorMe } = require("../controllers/vendorController");
-const { uploadVendorDoc } = require("../utils/vendorUpload");
-
-const { protectVendor } = require("../middleware/vendorAuth");
-
-
 const router = express.Router();
+const upload = require("../middleware/upload");
+const { registerVendor,loginVendor,getVendorDocuments,deleteVendorDocument,uploadVendorDocuments ,getVendorMe} = require("../controllers/vendorController");
+const { protectVendor } = require("../middleware/auth"); // we need this middleware
 
-router.post("/api/vendor/register", uploadVendorDoc.single("document"), registerVendor);
-router.get("/api/vendor", listVendors);
-router.post("/api/vendor/login", loginVendor);
+router.post(
+  "/api/vendors/register",
+  upload.fields([
+    { name: "portfolioFiles", maxCount: 10 },
+    { name: "productImages", maxCount: 10 },
+  ]),
+  registerVendor
+);
+router.post("/api/vendors/login", loginVendor);
 const {
-  getProducts,
-  getProductById,
-} = require("../controllers/productController");
+  createEstimation,
+  getVendorEstimations,
+  updateEstimation
+} = require("../controllers/Estimation");
+router.get("/api/vendors/me", protectVendor, getVendorMe);
+// Protected routes (authentication required)
+router.use(protectVendor); // all routes below this line require a valid token
 
-// GET /api/products
-router.get("/api/vendor/products", getProducts);
+router.post(
+  "/api/vendors/estimations",
+  upload.fields([
+    { name: "estimationDocument", maxCount: 1 },
+    { name: "quotationDocument", maxCount: 1 },
+    { name: "finalOrderImages", maxCount: 10 },
+    { name: "updateAttachments", maxCount: 10 },
+    { name: "closingImages", maxCount: 10 },
+  ]),
+  createEstimation
+);
 
-// GET /api/products/:id
-router.get("/api/vendor/products/:id", getProductById);
-router.get("/api/vendor/me", protectVendor, getVendorMe);
+router.get("/api/vendors/estimations", getVendorEstimations);
 
-
-
+router.put(
+  "/api/vendors/estimations/:id",
+  upload.fields([
+    { name: "estimationDocument", maxCount: 1 },
+    { name: "quotationDocument", maxCount: 1 },
+    { name: "finalOrderImages", maxCount: 10 },
+    { name: "updateAttachments", maxCount: 10 },
+    { name: "closingImages", maxCount: 10 },
+  ]),
+  updateEstimation
+);
+router.get("/api/vendors/vendor/:vendorId", getVendorEstimations);
+router.get("/api/vendors/documents", protectVendor, getVendorDocuments);
+router.post("/api/vendors/documents", protectVendor, upload.array("documents", 10), uploadVendorDocuments);
+router.delete("/api/vendors/documents/:id", protectVendor, deleteVendorDocument);
 const {
-  getCart,
-  addToCart,
-  updateCartQty,
-  removeCartItem,
-  clearCart,
-} = require("../controllers/cartController");
-
-router.get("/api/vendor/cart", protectVendor, getCart);
-router.post("/api/vendor/cart", protectVendor, addToCart);
-router.patch("/api/vendor/cart/:productId", protectVendor, updateCartQty);
-router.delete("/api/vendor/cart/:productId", protectVendor, removeCartItem);
-router.delete("/api/vendor/cart", protectVendor, clearCart);
-
-
-
-const {
-  getAddresses,
-  addAddress,
-  setDefaultAddress,
-} = require("../controllers/vendorAddressController");
-
-router.get("/api/vendor/addresses", protectVendor, getAddresses);
-router.post("/api/vendor/addresses", protectVendor, addAddress);
-router.patch("/api/vendor/addresses/:addressId/default", protectVendor, setDefaultAddress);
-
-
-
-const {
-  placeOrder,
-  getMyOrders,
-  getOrderById,
-  getAllVendorOrders,
-  trackOrder,
-  
-} = require("../controllers/vendorOrderController");
-const {getVendorReports} = require("../controllers/VendorDashboard");
-// create order from cart + address
-router.post("/api/vendor/orders", protectVendor, placeOrder);
-
-// list vendor orders
-router.get("/api/vendor/orders", protectVendor, getMyOrders);
-
-// order details
-router.get("/api/vendor/orders/:orderId", protectVendor, getOrderById);
-router.get("/api/vendor/vendor-orders", protectVendor, getAllVendorOrders);
-router.get("/api/vendor/orders/track/:trackingId", protectVendor, trackOrder);
-router.get("/api/vendor/reports", protectVendor, getVendorReports);
+  getPortfolio,
+  updatePortfolio,
+  addOrUpdateVideo,
+  addOrUpdateImage,
+  updateTestimonials,
+  deleteVideo
+} = require("../controllers/portfolioController");
+router.get("/api/vendors/portfolio", protectVendor, getPortfolio);
+router.put("/api/vendors/portfolio", protectVendor, updatePortfolio);
+router.post("/api/vendors/portfolio/video", protectVendor, upload.single("video"), addOrUpdateVideo);
+router.post("/api/vendors/portfolio/image", protectVendor, upload.single("image"), addOrUpdateImage);
+router.put("/api/vendors/portfolio/testimonials", protectVendor, updateTestimonials);
+router.delete("/api/vendors/portfolio/video/:index", protectVendor, deleteVideo);
 
 module.exports = router;

@@ -63,7 +63,7 @@ exports.downloadEstimateFile = async (req, res) => {
 // ---------- Step 1: Create estimate ----------
 exports.createEstimate = async (req, res) => {
   try {
-    const { floorplan, purpose, propertyType } = req.body;
+    const { floorplan, purpose, propertyType, budgetRange } = req.body; // ✅ added budgetRange
 
     if (!floorplan || !purpose || !propertyType) {
       return bad(res, 400, "floorplan, purpose, propertyType are required");
@@ -73,6 +73,7 @@ exports.createEstimate = async (req, res) => {
       floorplan,
       purpose,
       propertyType,
+      budgetRange, // ✅ save budgetRange
       status: "draft",
     });
 
@@ -238,6 +239,7 @@ exports.getAllEstimates = async (req, res) => {
         { city: { $regex: s, $options: "i" } },
         { floorplan: { $regex: s, $options: "i" } },
         { propertyType: { $regex: s, $options: "i" } },
+        { budgetRange: { $regex: s, $options: "i" } }, // ✅ allow searching by budget
       ];
     }
 
