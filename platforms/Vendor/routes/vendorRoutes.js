@@ -33,7 +33,6 @@ router.post(
   ]),
   createEstimation
 );
-app.use(protectVendor);
 
 router.get("/api/vendors/estimations", getVendorEstimations);
 
