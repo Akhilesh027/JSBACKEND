@@ -21,7 +21,6 @@ const {
 } = require("../controllers/Estimation");
 router.get("/api/vendors/me", protectVendor, getVendorMe);
 // Protected routes (authentication required)
-router.use(protectVendor); // all routes below this line require a valid token
 
 router.post(
   "/api/vendors/estimations",

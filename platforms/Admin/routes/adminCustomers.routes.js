@@ -140,10 +140,10 @@ const {
   deleteVendor,
   getAllEstimations
 } = require("../controllers/vendorListController");
-router.get("/api/admin/all", getAllVendors);               // GET /api/vendors/all
-router.patch("/api/admin/:id/approve", approveVendor);    // PATCH /api/vendors/:id/approve
-router.delete("/api/admin/:id", deleteVendor);            // DELETE /api/vendors/:id
-router.get('/api/admin/estimations', getAllEstimations);
+router.get("/api/admins/all", getAllVendors);               // GET /api/vendors/all
+router.patch("/api/admins/:id/approve", approveVendor);    // PATCH /api/vendors/:id/approve
+router.delete("/api/admins/:id", deleteVendor);            // DELETE /api/vendors/:id
+router.get('/api/admins/estimations', getAllEstimations);
 
 const Copupon = require("../controllers/adminCouponController");
 
