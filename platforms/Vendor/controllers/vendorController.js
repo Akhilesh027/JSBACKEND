@@ -1,7 +1,7 @@
 const Vendor = require("../models/Vendor");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const Document = require("../models/Document"); // create a Document model
+const Document = require("../models/Document");
 
 // Strong password regex
 const STRONG_PWD = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
@@ -21,7 +21,7 @@ function signToken(vendor) {
   );
 }
 
-// ========== REGISTER VENDOR (FIXED) ==========
+// ========== REGISTER VENDOR ==========
 exports.registerVendor = async (req, res) => {
   try {
     const {
@@ -33,7 +33,6 @@ exports.registerVendor = async (req, res) => {
       location,
       category,
       businessDesc,
-      // optional fields:
       gstNo,
       businessType,
       yearsExp,
@@ -44,12 +43,10 @@ exports.registerVendor = async (req, res) => {
       professionalExpertise,
     } = req.body;
 
-    // 1. Required fields validation
     if (!vendorName || !businessName || !email || !phone || !password || !location || !category || !businessDesc) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    // 2. Password strength
     if (!STRONG_PWD.test(password)) {
       return res.status(400).json({
         success: false,
@@ -57,7 +54,6 @@ exports.registerVendor = async (req, res) => {
       });
     }
 
-    // 3. Check existing vendor (email or phone)
     const existing = await Vendor.findOne({
       $or: [{ email: email.toLowerCase().trim() }, { phone: phone.trim() }],
     });
@@ -65,14 +61,10 @@ exports.registerVendor = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email or phone already registered" });
     }
 
-    // 4. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 5. Process uploaded files
     const portfolioFiles = req.files?.portfolioFiles?.map((f) => f.path) || [];
     const productImages = req.files?.productImages?.map((f) => f.path) || [];
 
-    // 6. Create vendor document
     const vendor = new Vendor({
       vendorName,
       businessName,
@@ -95,9 +87,8 @@ exports.registerVendor = async (req, res) => {
       status: "pending",
     });
 
-    await vendor.save();   // <-- CRITICAL: save to database
+    await vendor.save();
 
-    // 7. Return success (do NOT return password or full file paths)
     res.status(201).json({
       success: true,
       message: "Vendor registered successfully, pending admin approval",
@@ -109,7 +100,7 @@ exports.registerVendor = async (req, res) => {
   }
 };
 
-// ========== LOGIN VENDOR (FIXED) ==========
+// ========== LOGIN VENDOR ==========
 exports.loginVendor = async (req, res) => {
   try {
     let { email, phone, password } = req.body;
@@ -121,20 +112,16 @@ exports.loginVendor = async (req, res) => {
     email = email.trim().toLowerCase();
     phone = phone.trim();
 
-    // Find vendor (no regex injection)
     const vendor = await Vendor.findOne({ email, phone });
-
     if (!vendor) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Check password
     const isMatch = await bcrypt.compare(password, vendor.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Optional: Check account status
     if (vendor.status !== "approved") {
       return res.status(403).json({
         success: false,
@@ -142,10 +129,8 @@ exports.loginVendor = async (req, res) => {
       });
     }
 
-    // Generate token
     const token = signToken(vendor);
 
-    // Return safe vendor data
     res.status(200).json({
       success: true,
       token,
@@ -164,11 +149,14 @@ exports.loginVendor = async (req, res) => {
   }
 };
 
-// Get the logged-in vendor's own profile
+// ========== GET VENDOR PROFILE (public, expects vendorId in query) ==========
 exports.getVendorMe = async (req, res) => {
   try {
-    // req.vendor is attached by protectVendor middleware
-    const vendor = await Vendor.findById(req.vendor._id).select("-password");
+    const { vendorId } = req.query;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
+    const vendor = await Vendor.findById(vendorId).select("-password");
     if (!vendor) {
       return res.status(404).json({ success: false, message: "Vendor not found" });
     }
@@ -178,7 +166,8 @@ exports.getVendorMe = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-// ========== LIST VENDORS (Admin only) ==========
+
+// ========== LIST VENDORS (public, optionally filtered) ==========
 exports.listVendors = async (req, res) => {
   try {
     const { status = "pending", page = 1, limit = 20 } = req.query;
@@ -199,12 +188,17 @@ exports.listVendors = async (req, res) => {
   }
 };
 
+// ========== DOCUMENTS ==========
+
+// Upload vendor documents (expects vendorId in request body)
 exports.uploadVendorDocuments = async (req, res) => {
   try {
-    const vendorId = req.vendor._id;
-    const { documentName, category } = req.body;
+    const { vendorId, documentName, category } = req.body;
     const files = req.files; // array of uploaded files
 
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
     if (!files || files.length === 0) {
       return res.status(400).json({ success: false, message: "No files uploaded" });
     }
@@ -231,25 +225,35 @@ exports.uploadVendorDocuments = async (req, res) => {
   }
 };
 
+// Get all documents of a vendor (expects vendorId in query)
 exports.getVendorDocuments = async (req, res) => {
   try {
-    const vendorId = req.vendor._id;
+    const { vendorId } = req.query;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
     const documents = await Document.find({ vendorId }).sort({ uploadedAt: -1 });
     res.json({ success: true, documents });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ success: false, message: "Failed to fetch documents" });
   }
 };
 
+// Delete a document (expects vendorId in request body or query – we'll use body for simplicity)
 exports.deleteVendorDocument = async (req, res) => {
   try {
     const { id } = req.params;
-    const vendorId = req.vendor._id;
+    const { vendorId } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required (in request body)" });
+    }
     const doc = await Document.findOneAndDelete({ _id: id, vendorId });
     if (!doc) return res.status(404).json({ success: false, message: "Document not found" });
-    // optional: delete the physical file from disk
+    // optional: delete the physical file from disk here
     res.json({ success: true, message: "Document deleted" });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ success: false, message: "Delete failed" });
   }
 };

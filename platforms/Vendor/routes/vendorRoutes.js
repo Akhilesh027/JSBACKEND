@@ -2,9 +2,31 @@
 const express = require("express");
 const router = express.Router();
 const upload = require("../middleware/upload");
-const { registerVendor,loginVendor,getVendorDocuments,deleteVendorDocument,uploadVendorDocuments ,getVendorMe} = require("../controllers/vendorController");
-const { protectVendor } = require("../middleware/auth"); // we need this middleware
+const {
+  registerVendor,
+  loginVendor,
+  getVendorDocuments,
+  deleteVendorDocument,
+  uploadVendorDocuments,
+  getVendorMe,
+} = require("../controllers/vendorController");
 
+const {
+  createEstimation,
+  getVendorEstimations,
+  updateEstimation,
+} = require("../controllers/Estimation");
+
+const {
+  getPortfolio,
+  updatePortfolio,
+  addOrUpdateVideo,
+  addOrUpdateImage,
+  updateTestimonials,
+  deleteVideo,
+} = require("../controllers/portfolioController");
+
+// ========== Vendor Auth (public) ==========
 router.post(
   "/api/vendors/register",
   upload.fields([
@@ -14,14 +36,11 @@ router.post(
   registerVendor
 );
 router.post("/api/vendors/login", loginVendor);
-const {
-  createEstimation,
-  getVendorEstimations,
-  updateEstimation
-} = require("../controllers/Estimation");
-router.get("/api/vendors/me", protectVendor, getVendorMe);
-// Protected routes (authentication required)
 
+// ========== Vendor Profile (public, expects ?vendorId=xxx) ==========
+router.get("/api/vendors/me", getVendorMe);
+
+// ========== Estimations (public, vendorId required) ==========
 router.post(
   "/api/vendors/estimations",
   upload.fields([
@@ -33,9 +52,7 @@ router.post(
   ]),
   createEstimation
 );
-
-router.get("/api/vendors/estimations", getVendorEstimations);
-
+router.get("/api/vendors/estimations", getVendorEstimations);                // expects ?vendorId=xxx
 router.put(
   "/api/vendors/estimations/:id",
   upload.fields([
@@ -47,23 +64,19 @@ router.put(
   ]),
   updateEstimation
 );
-router.get("/api/vendors/vendor/:vendorId", getVendorEstimations);
-router.get("/api/vendors/documents", protectVendor, getVendorDocuments);
-router.post("/api/vendors/documents", protectVendor, upload.array("documents", 10), uploadVendorDocuments);
-router.delete("/api/vendors/documents/:id", protectVendor, deleteVendorDocument);
-const {
-  getPortfolio,
-  updatePortfolio,
-  addOrUpdateVideo,
-  addOrUpdateImage,
-  updateTestimonials,
-  deleteVideo
-} = require("../controllers/portfolioController");
-router.get("/api/vendors/portfolio", protectVendor, getPortfolio);
-router.put("/api/vendors/portfolio", protectVendor, updatePortfolio);
-router.post("/api/vendors/portfolio/video", protectVendor, upload.single("video"), addOrUpdateVideo);
-router.post("/api/vendors/portfolio/image", protectVendor, upload.single("image"), addOrUpdateImage);
-router.put("/api/vendors/portfolio/testimonials", protectVendor, updateTestimonials);
-router.delete("/api/vendors/portfolio/video/:index", protectVendor, deleteVideo);
+router.get("/api/vendors/vendor/:vendorId", getVendorEstimations);           // alternative path param
+
+// ========== Documents (public, vendorId required) ==========
+router.get("/api/vendors/documents", getVendorDocuments);                   // expects ?vendorId=xxx
+router.post("/api/vendors/documents", upload.array("documents", 10), uploadVendorDocuments); // expects vendorId in body
+router.delete("/api/vendors/documents/:id", deleteVendorDocument);          // expects vendorId in body
+
+// ========== Portfolio (public, vendorId required) ==========
+router.get("/api/vendors/portfolio", getPortfolio);                         // expects ?vendorId=xxx
+router.put("/api/vendors/portfolio", updatePortfolio);                      // expects vendorId in body
+router.post("/api/vendors/portfolio/video", upload.single("video"), addOrUpdateVideo);   // expects vendorId in body
+router.post("/api/vendors/portfolio/image", upload.single("image"), addOrUpdateImage);   // expects vendorId in body
+router.put("/api/vendors/portfolio/testimonials", updateTestimonials);      // expects vendorId in body
+router.delete("/api/vendors/portfolio/video/:index", deleteVideo);          // expects vendorId in body
 
 module.exports = router;

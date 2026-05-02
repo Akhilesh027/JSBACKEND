@@ -7,14 +7,17 @@ const ensureDir = (dir) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 };
 
-// GET /api/vendors/portfolio
+// ========== GET PORTFOLIO (public, expects vendorId in query) ==========
 exports.getPortfolio = async (req, res) => {
   try {
-    const vendor = await Vendor.findById(req.vendor._id).select("portfolio");
+    const { vendorId } = req.query;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
+    const vendor = await Vendor.findById(vendorId).select("portfolio");
     if (!vendor) {
       return res.status(404).json({ success: false, message: "Vendor not found" });
     }
-    // Ensure default structure if empty
     const portfolio = vendor.portfolio || {};
     const defaultStats = {
       projectsDelivered: "120+",
@@ -23,7 +26,6 @@ exports.getPortfolio = async (req, res) => {
       satisfaction: "100%"
     };
     const stats = portfolio.stats || defaultStats;
-    // Convert stats object to array for frontend display
     const statsArray = [
       { title: "Projects Delivered", value: stats.projectsDelivered },
       { title: "Years of Experience", value: stats.yearsExperience },
@@ -45,19 +47,25 @@ exports.getPortfolio = async (req, res) => {
   }
 };
 
-// PUT /api/vendors/portfolio (bulk update)
+// ========== UPDATE PORTFOLIO (bulk, expects vendorId in body) ==========
 exports.updatePortfolio = async (req, res) => {
   try {
-    const { videos, images, testimonials } = req.body;
+    const { vendorId, videos, images, testimonials } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
     const update = {};
     if (videos) update["portfolio.videos"] = videos;
     if (images) update["portfolio.images"] = images;
     if (testimonials) update["portfolio.testimonials"] = testimonials;
     const vendor = await Vendor.findByIdAndUpdate(
-      req.vendor._id,
+      vendorId,
       { $set: update },
       { new: true }
     );
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: "Vendor not found" });
+    }
     res.json({ success: true, portfolio: vendor.portfolio });
   } catch (error) {
     console.error(error);
@@ -65,37 +73,36 @@ exports.updatePortfolio = async (req, res) => {
   }
 };
 
-// POST /api/vendors/portfolio/video
-// Fields: "video" (file), "title", "videoIndex" (optional, to replace existing)
+// ========== ADD OR UPDATE VIDEO (expects vendorId in body) ==========
 exports.addOrUpdateVideo = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: "No video file uploaded" });
     }
-    const { title, videoIndex } = req.body;
-    const vendor = await Vendor.findById(req.vendor._id);
+    const { vendorId, title, videoIndex } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
+    const vendor = await Vendor.findById(vendorId);
     if (!vendor) {
       return res.status(404).json({ success: false, message: "Vendor not found" });
     }
-    // Ensure portfolio object exists
     if (!vendor.portfolio) vendor.portfolio = {};
     if (!vendor.portfolio.videos) vendor.portfolio.videos = [];
 
-    // Save file to disk (optional: use cloud storage)
+    // Save file
     const uploadDir = "uploads/portfolio/videos";
     ensureDir(uploadDir);
     const fileName = `${Date.now()}-${req.file.originalname}`;
     const filePath = path.join(uploadDir, fileName);
-    fs.renameSync(req.file.path, filePath); // move from temp location
+    fs.renameSync(req.file.path, filePath);
     const fileUrl = filePath.replace(/\\/g, "/");
 
     const newVideo = { title: title || "Untitled Video", url: fileUrl };
 
     if (videoIndex !== undefined && vendor.portfolio.videos[videoIndex]) {
-      // Replace existing video
       vendor.portfolio.videos[videoIndex] = newVideo;
     } else {
-      // Add new video
       vendor.portfolio.videos.push(newVideo);
     }
     await vendor.save();
@@ -107,15 +114,17 @@ exports.addOrUpdateVideo = async (req, res) => {
   }
 };
 
-// POST /api/vendors/portfolio/image
-// Fields: "image" (file), "imageIndex" (optional), "title" (optional)
+// ========== ADD OR UPDATE IMAGE (expects vendorId in body) ==========
 exports.addOrUpdateImage = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: "No image file uploaded" });
     }
-    const { title, imageIndex } = req.body;
-    const vendor = await Vendor.findById(req.vendor._id);
+    const { vendorId, title, imageIndex } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
+    const vendor = await Vendor.findById(vendorId);
     if (!vendor) {
       return res.status(404).json({ success: false, message: "Vendor not found" });
     }
@@ -145,18 +154,24 @@ exports.addOrUpdateImage = async (req, res) => {
   }
 };
 
-// PUT /api/vendors/portfolio/testimonials
+// ========== UPDATE TESTIMONIALS (expects vendorId in body) ==========
 exports.updateTestimonials = async (req, res) => {
   try {
-    const { testimonials } = req.body;
+    const { vendorId, testimonials } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required" });
+    }
     if (!Array.isArray(testimonials)) {
       return res.status(400).json({ success: false, message: "Testimonials must be an array" });
     }
     const vendor = await Vendor.findByIdAndUpdate(
-      req.vendor._id,
+      vendorId,
       { $set: { "portfolio.testimonials": testimonials } },
       { new: true }
     );
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: "Vendor not found" });
+    }
     res.json({ success: true, testimonials: vendor.portfolio.testimonials });
   } catch (error) {
     console.error(error);
@@ -164,15 +179,19 @@ exports.updateTestimonials = async (req, res) => {
   }
 };
 
-// DELETE /api/vendors/portfolio/video/:index
+// ========== DELETE VIDEO (expects vendorId in body ===) ==========
+// We'll read vendorId from request body (or optionally from query). Using body is consistent.
 exports.deleteVideo = async (req, res) => {
   try {
+    const { vendorId } = req.body;
     const index = parseInt(req.params.index);
-    const vendor = await Vendor.findById(req.vendor._id);
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId required (in request body)" });
+    }
+    const vendor = await Vendor.findById(vendorId);
     if (!vendor || !vendor.portfolio?.videos || !vendor.portfolio.videos[index]) {
       return res.status(404).json({ success: false, message: "Video not found" });
     }
-    // Optional: delete the physical file
     const videoUrl = vendor.portfolio.videos[index].url;
     if (videoUrl && !videoUrl.includes("youtube.com")) {
       const filePath = path.join(process.cwd(), videoUrl);

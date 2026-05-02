@@ -8,10 +8,14 @@ const safeParse = (value) => {
   }
 };
 
-// Create a new estimation (vendorId from authenticated vendor)
+// ========== CREATE ESTIMATION ==========
+// Expects vendorId in request body (form-data or JSON)
 exports.createEstimation = async (req, res) => {
   try {
-    const vendorId = req.vendor._id; // from protectVendor middleware
+    const { vendorId } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId is required" });
+    }
 
     const {
       projectName,
@@ -73,10 +77,14 @@ exports.createEstimation = async (req, res) => {
   }
 };
 
-// Get all estimations for the logged-in vendor
+// ========== GET ALL ESTIMATIONS FOR A VENDOR ==========
+// Expects vendorId as a query parameter: ?vendorId=...
 exports.getVendorEstimations = async (req, res) => {
   try {
-    const vendorId = req.vendor._id;
+    const { vendorId } = req.query;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId is required" });
+    }
     const estimations = await Estimation.find({ vendorId }).sort({ createdAt: -1 });
     return res.status(200).json({
       success: true,
@@ -91,11 +99,15 @@ exports.getVendorEstimations = async (req, res) => {
   }
 };
 
-// Update an existing estimation (only if it belongs to the vendor)
+// ========== UPDATE ESTIMATION ==========
+// Expects vendorId in request body (JSON or form-data)
 exports.updateEstimation = async (req, res) => {
   try {
     const { id } = req.params;
-    const vendorId = req.vendor._id;
+    const { vendorId } = req.body;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: "vendorId is required" });
+    }
 
     // Find estimation and ensure it belongs to the vendor
     const estimation = await Estimation.findOne({ _id: id, vendorId });
@@ -137,7 +149,7 @@ exports.updateEstimation = async (req, res) => {
     if (updatesSection !== undefined) estimation.updatesSection = safeParse(updatesSection);
     if (closingSection !== undefined) estimation.closingSection = safeParse(closingSection);
 
-    // Handle files (if new files are uploaded, replace or append – here we replace)
+    // Handle files (if new files are uploaded, replace)
     if (req.files?.estimationDocument?.[0]) {
       estimation.estimationDocument = req.files.estimationDocument[0].path;
     }
