@@ -72,7 +72,6 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
-app.use(protectVendor);
 
 // Security (helmet + hpp)
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
