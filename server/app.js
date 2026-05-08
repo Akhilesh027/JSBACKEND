@@ -34,6 +34,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8087",
   "http://localhost:5000",
   "https://jsvendor.jsgallor.com",
+  
   "https://jsgallormanufacture.jsgallor.com",
   "https://vendor.jsgallor.com",
   "https://www.jsgallor.com",
