@@ -1,10 +1,12 @@
-// routes/vendorRoutes.js
 const express = require("express");
 const router = express.Router();
 const upload = require("../middleware/upload");
+
 const {
   registerVendor,
   loginVendor,
+  checkVendorEmail,
+  resetVendorPassword,
   getVendorDocuments,
   deleteVendorDocument,
   uploadVendorDocuments,
@@ -26,7 +28,7 @@ const {
   deleteVideo,
 } = require("../controllers/portfolioController");
 
-// ========== Vendor Auth (public) ==========
+// ========== Vendor Auth ==========
 router.post(
   "/api/vendors/register",
   upload.fields([
@@ -35,12 +37,15 @@ router.post(
   ]),
   registerVendor
 );
-router.post("/api/vendors/login", loginVendor);
 
-// ========== Vendor Profile (public, expects ?vendorId=xxx) ==========
+router.post("/api/vendors/login", loginVendor);
+router.post("/api/vendors/check-email", checkVendorEmail);
+router.post("/api/vendors/reset-password", resetVendorPassword);
+
+// ========== Vendor Profile ==========
 router.get("/api/vendors/me", getVendorMe);
 
-// ========== Estimations (public, vendorId required) ==========
+// ========== Estimations ==========
 router.post(
   "/api/vendors/estimations",
   upload.fields([
@@ -52,7 +57,9 @@ router.post(
   ]),
   createEstimation
 );
-router.get("/api/vendors/estimations", getVendorEstimations);                // expects ?vendorId=xxx
+
+router.get("/api/vendors/estimations", getVendorEstimations);
+
 router.put(
   "/api/vendors/estimations/:id",
   upload.fields([
@@ -64,19 +71,24 @@ router.put(
   ]),
   updateEstimation
 );
-router.get("/api/vendors/vendor/:vendorId", getVendorEstimations);           // alternative path param
 
-// ========== Documents (public, vendorId required) ==========
-router.get("/api/vendors/documents", getVendorDocuments);                   // expects ?vendorId=xxx
-router.post("/api/vendors/documents", upload.array("documents", 10), uploadVendorDocuments); // expects vendorId in body
-router.delete("/api/vendors/documents/:id", deleteVendorDocument);          // expects vendorId in body
+router.get("/api/vendors/vendor/:vendorId", getVendorEstimations);
 
-// ========== Portfolio (public, vendorId required) ==========
-router.get("/api/vendors/portfolio", getPortfolio);                         // expects ?vendorId=xxx
-router.put("/api/vendors/portfolio", updatePortfolio);                      // expects vendorId in body
-router.post("/api/vendors/portfolio/video", upload.single("video"), addOrUpdateVideo);   // expects vendorId in body
-router.post("/api/vendors/portfolio/image", upload.single("image"), addOrUpdateImage);   // expects vendorId in body
-router.put("/api/vendors/portfolio/testimonials", updateTestimonials);      // expects vendorId in body
-router.delete("/api/vendors/portfolio/video/:index", deleteVideo);          // expects vendorId in body
+// ========== Documents ==========
+router.get("/api/vendors/documents", getVendorDocuments);
+router.post(
+  "/api/vendors/documents",
+  upload.array("documents", 10),
+  uploadVendorDocuments
+);
+router.delete("/api/vendors/documents/:id", deleteVendorDocument);
+
+// ========== Portfolio ==========
+router.get("/api/vendors/portfolio", getPortfolio);
+router.put("/api/vendors/portfolio", updatePortfolio);
+router.post("/api/vendors/portfolio/video", upload.single("video"), addOrUpdateVideo);
+router.post("/api/vendors/portfolio/image", upload.single("image"), addOrUpdateImage);
+router.put("/api/vendors/portfolio/testimonials", updateTestimonials);
+router.delete("/api/vendors/portfolio/video/:index", deleteVideo);
 
 module.exports = router;

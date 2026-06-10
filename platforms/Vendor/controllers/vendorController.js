@@ -57,7 +57,6 @@ exports.registerVendor = async (req, res) => {
       });
     }
 
-    // Simple password validation only
     if (!String(password).trim()) {
       return res.status(400).json({
         success: false,
@@ -115,6 +114,92 @@ exports.registerVendor = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Registration failed",
+    });
+  }
+};
+
+// ========== CHECK VENDOR EMAIL ==========
+exports.checkVendorEmail = async (req, res) => {
+  try {
+    let { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    email = email.trim().toLowerCase();
+
+    const vendor = await Vendor.findOne({ email }).select("_id email status");
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not registered. Please register first.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified. You can reset your password.",
+      vendorId: vendor._id,
+      status: vendor.status,
+    });
+  } catch (error) {
+    console.error("Check email error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to check email",
+    });
+  }
+};
+
+// ========== RESET VENDOR PASSWORD ==========
+exports.resetVendorPassword = async (req, res) => {
+  try {
+    let { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and new password are required",
+      });
+    }
+
+    email = email.trim().toLowerCase();
+
+    if (!String(newPassword).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required",
+      });
+    }
+
+    const vendor = await Vendor.findOne({ email });
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not registered. Please register first.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    vendor.password = hashedPassword;
+
+    await vendor.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successfully. Please login.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Password reset failed",
     });
   }
 };
