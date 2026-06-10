@@ -30,7 +30,12 @@ const vendorSchema = new mongoose.Schema(
     gstNo: { type: String, default: "" },
     businessType: { type: String, default: "" },
     email: { type: String, required: true, unique: true, lowercase: true },
-    phone: { type: String, required: true, unique: true },
+phone: {
+  type: String,
+  required: true,
+  unique: true,
+  sparse: true
+},
     password: { type: String, required: true }, // hashed
     location: { type: String, required: true },
     yearsExp: { type: Number, default: 0 },
