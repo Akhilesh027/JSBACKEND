@@ -1,55 +1,97 @@
-// middleware/upload.js
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// Helper to ensure directory exists
 const ensureDir = (dir) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 };
 
-// Define destination folder based on field name
 const getDestination = (fieldname) => {
   const folders = {
     portfolioFiles: "uploads/vendors/portfolio",
     productImages: "uploads/vendors/products",
+    documents: "uploads/vendors/documents",
+
     estimationDocument: "uploads/vendors/estimations",
     quotationDocument: "uploads/vendors/quotations",
     finalOrderImages: "uploads/vendors/orders/final",
     updateAttachments: "uploads/vendors/orders/updates",
     closingImages: "uploads/vendors/orders/closing",
+
     video: "uploads/vendors/portfolio/videos",
     image: "uploads/vendors/portfolio/images",
   };
+
   return folders[fieldname] || "uploads/vendors/misc";
 };
 
-// Allowed MIME types per field
 const getAllowedMimeTypes = (fieldname) => {
-  const images = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-  const documents = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
-  const spreadsheets = ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
-  const videos = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/mpeg"];
+  const images = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+  ];
 
-  if (["portfolioFiles", "estimationDocument", "quotationDocument", "updateAttachments"].includes(fieldname)) {
+  const documents = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ];
+
+  const spreadsheets = [
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ];
+
+  const videos = [
+    "video/mp4",
+    "video/quicktime",
+    "video/x-msvideo",
+    "video/mpeg",
+  ];
+
+  if (
+    [
+      "portfolioFiles",
+      "documents",
+      "estimationDocument",
+      "quotationDocument",
+      "updateAttachments",
+    ].includes(fieldname)
+  ) {
     return [...images, ...documents, ...spreadsheets];
   }
-  if (["productImages", "finalOrderImages", "closingImages", "image"].includes(fieldname)) {
+
+  if (
+    ["productImages", "finalOrderImages", "closingImages", "image"].includes(
+      fieldname
+    )
+  ) {
     return images;
   }
+
   if (fieldname === "video") {
     return videos;
   }
-  return [...images, ...documents]; // default
+
+  return [...images, ...documents, ...spreadsheets];
 };
 
-// File filter function
 const fileFilter = (req, file, cb) => {
   const allowedMimes = getAllowedMimeTypes(file.fieldname);
+
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error(`Unsupported file type for field '${file.fieldname}'. Allowed: ${allowedMimes.join(", ")}`), false);
+    cb(
+      new Error(
+        `Unsupported file type for '${file.fieldname}'. Received: ${file.mimetype}`
+      ),
+      false
+    );
   }
 };
 
@@ -59,6 +101,7 @@ const storage = multer.diskStorage({
     ensureDir(dest);
     cb(null, dest);
   },
+
   filename: (req, file, cb) => {
     const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
@@ -66,14 +109,12 @@ const storage = multer.diskStorage({
   },
 });
 
-// Create multer instance with limits (adjust max file size as needed)
 const upload = multer({
   storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100 MB max (for videos)
+    fileSize: 100 * 1024 * 1024,
   },
   fileFilter,
 });
 
-// Export multer as is – the calling route will use .fields() or .single()
 module.exports = upload;
