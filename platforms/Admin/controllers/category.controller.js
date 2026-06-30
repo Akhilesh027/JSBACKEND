@@ -46,13 +46,20 @@ const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /**
  * Helper function to upload image to Cloudinary
  */
+/**
+ * Helper function to upload image to Cloudinary with auto-compression
+ */
 async function uploadImageToCloudinary(fileBuffer, folder = "categories") {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folder,
-        allowed_formats: ["jpg", "png", "jpeg", "webp", "gif"],
-        transformation: [{ width: 800, height: 800, crop: "limit" }],
+        allowed_formats: ["jpg", "png", "jpeg", "webp", "gif", "heic", "heif"],
+        // ✅ Auto-compress: Cloudinary picks the best format & quality
+        // This means even a 10MB original is stored at much smaller size
+        transformation: [
+          { quality: "auto", fetch_format: "auto" },
+        ],
       },
       (error, result) => {
         if (error) reject(error);
@@ -81,22 +88,34 @@ async function deleteImageFromCloudinary(publicId) {
 
 /**
  * Helper to parse multipart/form-data for image upload
+ * Busboy limits: 10 MB per file, prevents memory overload
  */
 const parseMultipartData = (req) => {
   return new Promise((resolve, reject) => {
     const busboy = require("busboy");
-    const bb = busboy({ headers: req.headers });
-    
+    const bb = busboy({
+      headers: req.headers,
+      limits: {
+        fileSize: 10 * 1024 * 1024, // ✅ 10 MB per file
+        files: 1,                    // Only one image per category
+      },
+    });
+
     const fields = {};
     const files = [];
-    
+
     bb.on("field", (name, val) => {
       fields[name] = val;
     });
-    
+
     bb.on("file", (name, file, info) => {
       const chunks = [];
       file.on("data", (chunk) => chunks.push(chunk));
+      file.on("limit", () => {
+        // Drain the stream and reject with a friendly error
+        file.resume();
+        reject(new Error("Image file too large. Maximum size is 10 MB."));
+      });
       file.on("end", () => {
         files.push({
           fieldName: name,
@@ -106,10 +125,10 @@ const parseMultipartData = (req) => {
         });
       });
     });
-    
+
     bb.on("error", (err) => reject(err));
     bb.on("close", () => resolve({ fields, files }));
-    
+
     req.pipe(bb);
   });
 };

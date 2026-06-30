@@ -12,9 +12,10 @@ const AllRoutes = require("../routes/All.routes");
 const app = express();
 app.set("trust proxy", 1);
 
-// Body parsers
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: false, limit: "10kb" }));
+// Body parsers — raised to 50MB so large JSON payloads (base64 images, etc.) are not rejected
+// Note: multipart/form-data uploads bypass these parsers (multer handles them directly)
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 // Static files (single line)
@@ -58,26 +59,9 @@ app.use(
   })
 );
 
-app.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === "FILE_TOO_LARGE") {
-      return res.status(413).json({ success: false, message: "File too large (max 10MB)" });
-    }
-    if (err.code === "LIMIT_UNEXPECTED_FILE") {
-      return res.status(400).json({ success: false, message: `Unexpected field: ${err.field}` });
-    }
-    return res.status(400).json({ success: false, message: err.message });
-  }
-  if (err.message && err.message.includes("Only PDF and images allowed")) {
-    return res.status(400).json({ success: false, message: err.message });
-  }
-  next(err);
-});
-
-// Security (helmet + hpp)
+// Security (helmet + hpp) — must come before routes
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(hpp());
-app.use('/uploads', express.static('uploads'));
 
 // Routes
 app.use("/", AllRoutes);
@@ -85,6 +69,23 @@ app.use("/", AllRoutes);
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "API endpoint not found" });
+});
+
+// ✅ Multer error handler — MUST be after routes so it catches upload errors from route handlers
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "FILE_TOO_LARGE") {
+      return res.status(413).json({ success: false, message: "File too large (max 10MB per file)" });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({ success: false, message: `Unexpected field: ${err.field}` });
+    }
+    return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
+  }
+  if (err.message && (err.message.includes("Only PDF and images allowed") || err.message.includes("Unsupported file type"))) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+  next(err);
 });
 
 // Global error handler
