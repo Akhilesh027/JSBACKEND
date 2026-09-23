@@ -24,6 +24,9 @@ router.use('/', VendorRoutes);
 router.post("/api/auth/google", googleAuth);
 router.use("/api/payments", require("../routes/Payment"));
 router.use("/api/estimates", estimateRoutes);
+router.use("/api/public/orders", require("./publicOrderRoutes"));
+router.use("/api/whatsapp", require("./whatsappRoutes"));
+router.use("/", require("./bannerRoutes"));
 
 
 module.exports = router;

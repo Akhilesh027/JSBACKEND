@@ -44,8 +44,10 @@ budgetRange: {
     // Step 4 – Contact & submission
     name: { type: String, default: "" },
     phone: { type: String, default: "" },
+    email: { type: String, trim: true, default: "" },
     whatsappUpdates: { type: Boolean, default: true },
     city: { type: String, default: "" },
+    flowType: { type: String, default: "interior" },
 
     // Admin pricing
     estimatedAmount: { type: Number, min: 0 },

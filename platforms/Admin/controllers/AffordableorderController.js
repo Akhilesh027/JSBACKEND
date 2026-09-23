@@ -4,6 +4,7 @@ const Order = require("../../affordable-website/models/AffordableOrder");
 // ✅ Update these imports to your actual model paths
 const User = require("../../affordable-website/models/affordable_customers");
 const Address = require("../../affordable-website/models/AffordableAddress");
+const { sendOrderStatusNotification } = require("../../../shared/services/orderNotificationService");
 
 /** -----------------------------------
  * Helpers
@@ -186,6 +187,8 @@ exports.approveOrder = async (req, res) => {
 
     await order.save();
 
+    sendOrderStatusNotification(order._id, "affordable", "approved");
+
     const enriched = await enrichOrder(order);
 
     return res.json({
@@ -226,6 +229,8 @@ exports.rejectOrder = async (req, res) => {
     });
 
     await order.save();
+
+    sendOrderStatusNotification(order._id, "affordable", "rejected", reason);
 
     const enriched = await enrichOrder(order);
 
@@ -282,6 +287,8 @@ exports.updateOrderStatus = async (req, res) => {
     });
 
     await order.save();
+
+    sendOrderStatusNotification(order._id, "affordable", status);
 
     const enriched = await enrichOrder(order);
 

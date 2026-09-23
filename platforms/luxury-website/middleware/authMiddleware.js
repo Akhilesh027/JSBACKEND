@@ -5,7 +5,7 @@ const luxuryAuthMiddleware = async (req, res, next) => {
   try {
     // Get token from header
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -15,7 +15,7 @@ const luxuryAuthMiddleware = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'LUXURY_SECRET_789');
-    
+
     // Check if it's a luxury platform token
     if (decoded.platform !== 'luxury') {
       return res.status(403).json({
@@ -48,25 +48,25 @@ const luxuryAuthMiddleware = async (req, res, next) => {
       platform: customer.platform,
       type: 'customer'
     };
-    
+
     next();
   } catch (error) {
     console.error('Luxury auth middleware error:', error);
-    
+
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
         message: 'Invalid authentication token.'
       });
     }
-    
+
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
         message: 'Authentication token has expired. Please sign in again.'
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Authentication error. Please contact our concierge for assistance.'
@@ -83,7 +83,7 @@ const vipMiddleware = async (req, res, next) => {
         message: 'VIP access required. This feature is only available to our VIP members.'
       });
     }
-    
+
     next();
   } catch (error) {
     console.error('VIP middleware error:', error);
@@ -103,7 +103,7 @@ const platinumMiddleware = async (req, res, next) => {
         message: 'Platinum/Diamond VIP access required. This is an exclusive feature for our highest-tier members.'
       });
     }
-    
+
     next();
   } catch (error) {
     console.error('Platinum middleware error:', error);

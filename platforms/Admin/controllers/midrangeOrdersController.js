@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const MidrangeOrder = require("../../midrange-website/models/MidrangeOrder");
 const MidrangeUser = require("../../midrange-website/models/midrange_customers");
 const MidrangeAddress = require("../../midrange-website/models/MidrangeAddress");
+const { sendOrderStatusNotification } = require("../../../shared/services/orderNotificationService");
 
 /* ---------------- STATUS FLOW ---------------- */
 
@@ -181,6 +182,8 @@ exports.updateOrderStatus = async (req, res) => {
 
     await order.save();
 
+    sendOrderStatusNotification(order._id, "midrange", nextStatus, req.body?.reason || "");
+
     const enriched = await enrichMidrangeOrder(order);
 
     return res.json({
@@ -284,6 +287,8 @@ exports.approveMidrangeOrder = async (req, res) => {
 
     await order.save();
 
+    sendOrderStatusNotification(order._id, "midrange", "approved");
+
     const enriched = await enrichMidrangeOrder(order);
 
     res.json({
@@ -331,6 +336,8 @@ exports.rejectMidrangeOrder = async (req, res) => {
     appendStatusHistory(order, "rejected", adminId, reason);
 
     await order.save();
+
+    sendOrderStatusNotification(order._id, "midrange", "rejected", reason);
 
     const enriched = await enrichMidrangeOrder(order);
 

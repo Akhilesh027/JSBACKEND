@@ -1,6 +1,7 @@
 const Estimate = require("../models/Estimate");
 const path = require("path");
 const fs = require("fs");
+const { sendEstimateNotifications } = require("../../../shared/services/estimateNotificationService");
 
 const ok = (res, data, message = "OK") =>
   res.json({ success: true, message, data });
@@ -63,7 +64,7 @@ exports.downloadEstimateFile = async (req, res) => {
 // ---------- Step 1: Create estimate ----------
 exports.createEstimate = async (req, res) => {
   try {
-    const { floorplan, purpose, propertyType, budgetRange } = req.body; // ✅ added budgetRange
+    const { floorplan, purpose, propertyType, budgetRange, flowType } = req.body;
 
     if (!floorplan || !purpose || !propertyType) {
       return bad(res, 400, "floorplan, purpose, propertyType are required");
@@ -73,7 +74,8 @@ exports.createEstimate = async (req, res) => {
       floorplan,
       purpose,
       propertyType,
-      budgetRange, // ✅ save budgetRange
+      budgetRange,
+      flowType: flowType || "interior",
       status: "draft",
     });
 
@@ -182,25 +184,33 @@ exports.updateStep3 = async (req, res) => {
 exports.updateStep4Submit = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, whatsappUpdates, city } = req.body;
+    const { name, phone, email, whatsappUpdates, city, flowType } = req.body;
 
     if (!name || !phone || !city) {
       return bad(res, 400, "name, phone, city are required");
     }
 
+    const updateFields = {
+      name,
+      phone,
+      whatsappUpdates: whatsappUpdates ?? true,
+      city,
+      status: "submitted",
+    };
+
+    if (email) updateFields.email = email.trim().toLowerCase();
+    if (flowType) updateFields.flowType = flowType;
+
     const estimate = await Estimate.findByIdAndUpdate(
       id,
-      {
-        name,
-        phone,
-        whatsappUpdates: whatsappUpdates ?? true,
-        city,
-        status: "submitted",
-      },
+      updateFields,
       { new: true }
     );
 
     if (!estimate) return bad(res, 404, "Estimate not found");
+
+    // Asynchronously dispatch Admin lead alert and Customer WhatsApp/Email acknowledgments
+    sendEstimateNotifications(estimate);
 
     return ok(res, estimate, "Estimate submitted");
   } catch (err) {

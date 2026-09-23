@@ -9,6 +9,7 @@ const Product = require("../../manufacturer-portal/models/Product");
 const Coupon = require("../../Admin/models/Coupon");
 const CouponUsage = require("../../Admin/models/CouponUsage");
 const MidrangeCustomer = require("../models/midrange_customers");
+const { sendOrderNotifications } = require("../../../shared/services/orderNotificationService");
 
 const WEBSITE = "mid_range";
 const ALLOWED_TIER = "mid_range";
@@ -289,6 +290,10 @@ exports.placeOrder = async (req, res) => {
         );
       }
     });
+
+    if (createdOrder) {
+      sendOrderNotifications(createdOrder._id, "midrange");
+    }
 
     return res.json({ data: createdOrder, message: "Order placed successfully" });
   } catch (err) {

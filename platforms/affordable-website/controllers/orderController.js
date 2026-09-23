@@ -6,6 +6,7 @@ const Address = require("../models/AffordableAddress");
 const Customer = require("../models/affordable_customers");
 const Coupon = require("../../Admin/models/Coupon");
 const CouponUsage = require("../../Admin/models/CouponUsage");
+const { sendOrderNotifications } = require("../../../shared/services/orderNotificationService");
 
 const safeName = (u) =>
   (u?.fullName || u?.name || `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || "").trim();
@@ -76,79 +77,6 @@ function formatPhoneNumber(phone) {
     return `+${cleaned}`;
   }
 }
-
-/**
- * Send WhatsApp message via MyOperator API
- * @param {string} to - Phone number with country code (e.g., "+919876543210")
- * @param {string} body - Message text
- */
-async function sendWhatsAppMessage(to, body) {
-  try {
-    const apiUrl = "https://publicapi.myoperator.co/chat/messages";
-    const apiKey = "1PxUTxN2GF8nQ1sPAd1Lsul1SnmKtdbV5dQnNNBrXT";
-    const companyId = "69a2b6fe3cc89864";
-    const phoneNumberId = "958894630648906"; // e.g., "958894630648906"
-
-    if (!apiKey || !companyId || !phoneNumberId) {
-      console.error("❌ Missing WhatsApp env config: WHATSAPP_API_KEY, WHATSAPP_COMPANY_ID, WHATSAPP_PHONE_NUMBER_ID");
-      return;
-    }
-
-    // Extract country code and local number from formatted phone
-    const cleaned = to.replace(/\D/g, ""); // Remove all non-digits
-    let countryCode = "91"; // default India
-    let localNumber = cleaned;
-
-    // If number starts with country code (e.g., 91xxxxxxxxxx)
-    if (cleaned.length >= 12 && cleaned.startsWith("91")) {
-      countryCode = "91";
-      localNumber = cleaned.substring(2);
-    } else if (cleaned.length === 10) {
-      // Indian 10-digit mobile
-      countryCode = "91";
-      localNumber = cleaned;
-    } else {
-      // Fallback: treat whole as local number and assume India
-      console.warn("⚠️ Unexpected phone format, using default country code 91");
-      countryCode = "91";
-      localNumber = cleaned;
-    }
-
-    // Generate unique reference ID
-    const myopRefId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-
-    const payload = {
-      phone_number_id: phoneNumberId,
-      customer_country_code: countryCode,
-      customer_number: localNumber,
-      data: {
-        type: "text",
-        context: {
-          body: body,
-          preview_url: false,
-        },
-      },
-      reply_to: null,
-      myop_ref_id: myopRefId,
-    };
-
-    const response = await axios.post(apiUrl, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "X-MYOP-COMPANY-ID": companyId,
-      },
-    });
-
-    console.log("✅ WhatsApp Sent:", response.data);
-    return response.data;
-  } catch (err) {
-    console.error("❌ WhatsApp Error:", err.response?.data || err.message);
-    throw err;
-  }
-}
-
 // -------------------- Main Controller --------------------
 
 exports.createOrder = async (req, res) => {
@@ -347,61 +275,8 @@ exports.createOrder = async (req, res) => {
       );
     });
 
-    // ---------- WhatsApp notification with fallback ----------
-    console.log("[DEBUG] Entering WhatsApp notification block");
-
-    try {
-      const customer = await Customer.findById(userId).lean();
-      console.log("[DEBUG] Full customer data:", customer);
-
-      let phone = null;
-
-      if (customer?.phone) {
-        phone = customer.phone;
-        console.log("[DEBUG] Found phone in customer:", phone);
-      } else if (customer?.mobile) {
-        phone = customer.mobile;
-        console.log("[DEBUG] Found mobile in customer:", phone);
-      } else if (customer?.phoneNumber) {
-        phone = customer.phoneNumber;
-        console.log("[DEBUG] Found phoneNumber in customer:", phone);
-      }
-
-      if (!phone && address) {
-        if (address.phone) {
-          phone = address.phone;
-          console.log("[DEBUG] Found phone in address:", phone);
-        } else if (address.mobile) {
-          phone = address.mobile;
-          console.log("[DEBUG] Found mobile in address:", phone);
-        } else if (address.phoneNumber) {
-          phone = address.phoneNumber;
-          console.log("[DEBUG] Found phoneNumber in address:", phone);
-        }
-      }
-
-      if (phone) {
-        const formattedPhone = formatPhoneNumber(phone);
-        console.log("[DEBUG] Formatted phone number:", formattedPhone);
-
-        if (formattedPhone) {
-          const itemList = normalizedItems
-            .map(item => `${item.productSnapshot?.name || 'Item'} x${item.quantity}`)
-            .join('\n');
-
-          const message = `🎉 Thank you for your order!\n\nOrder ID: ${createdOrder._id}\nTotal: ₹${finalTotal}\n\nItems:\n${itemList}\n\nWe'll notify you once it ships.\n\n- Affordable Team`;
-          console.log("[DEBUG] Sending message to:", formattedPhone);
-          await sendWhatsAppMessage(formattedPhone, message);
-          console.log("[DEBUG] Message sent successfully");
-        } else {
-          console.log("[DEBUG] Phone number formatting returned null");
-        }
-      } else {
-        console.log("[DEBUG] No phone found in customer or address");
-      }
-    } catch (waError) {
-      console.error("[DEBUG] WhatsApp notification failed:", waError.message);
-    }
+    // ---------- Trigger Order Notifications (Email with PDF Invoice + WhatsApp) ----------
+    sendOrderNotifications(createdOrder._id, "affordable");
 
     return res.status(201).json({ data: createdOrder });
   } catch (err) {

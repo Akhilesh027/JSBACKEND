@@ -5,7 +5,7 @@ const midrangeAuthMiddleware = async (req, res, next) => {
   try {
     // Get token from header
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -15,7 +15,7 @@ const midrangeAuthMiddleware = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     // Check if it's a mid-range platform token
     if (decoded.platform !== 'midrange') {
       return res.status(403).json({
@@ -43,32 +43,32 @@ const midrangeAuthMiddleware = async (req, res, next) => {
     req.customer = customer;
     req.user = {
       id: customer._id,
-        _id: customer._id,   // ✅ add this line
+      _id: customer._id,   // ✅ add this line
 
       email: customer.email,
       role: customer.role,
       platform: customer.platform,
       membershipLevel: customer.membershipLevel
     };
-    
+
     next();
   } catch (error) {
     console.error('Mid-range auth middleware error:', error);
-    
+
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
         message: 'Invalid token'
       });
     }
-    
+
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
         message: 'Token expired'
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Authentication error'

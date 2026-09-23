@@ -33,9 +33,9 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8085",
   "http://localhost:8086",
   "http://localhost:8087",
-  "http://localhost:5000",
+  "https://api.jsgallor.com",
   "https://jsvendor.jsgallor.com",
-  
+
   "https://jsgallormanufacture.jsgallor.com",
   "https://vendor.jsgallor.com",
   "https://www.jsgallor.com",
@@ -50,7 +50,13 @@ app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      if (
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:") ||
+        ALLOWED_ORIGINS.includes(origin)
+      ) {
+        return cb(null, true);
+      }
       return cb(new Error("Not allowed by CORS: " + origin));
     },
     credentials: true,

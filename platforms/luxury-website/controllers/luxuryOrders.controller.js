@@ -3,6 +3,7 @@ const Customer = require("../models/luxury_customers");
 const LuxuryOrder = require("../models/luxury_orders.js");
 const Coupon = require("../../Admin/models/Coupon.js");
 const CouponUsage = require("../../Admin/models/CouponUsage.js");
+const { sendOrderNotifications } = require("../../../shared/services/orderNotificationService");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 
@@ -277,6 +278,10 @@ exports.placeOrder = async (req, res) => {
         );
       }
     });
+
+    if (createdOrder) {
+      sendOrderNotifications(createdOrder._id, "luxury");
+    }
 
     return res.status(201).json({
       success: true,

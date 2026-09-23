@@ -5,7 +5,7 @@ const affordableAuthMiddleware = async (req, res, next) => {
   try {
     // Get token from header
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -15,7 +15,7 @@ const affordableAuthMiddleware = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'AFFORDABLE_SECRET');
-    
+
     // Check if it's an affordable platform token
     if (decoded.platform !== 'affordable') {
       return res.status(403).json({
@@ -47,25 +47,25 @@ const affordableAuthMiddleware = async (req, res, next) => {
       role: customer.role,
       platform: customer.platform
     };
-    
+
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    
+
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
         message: 'Invalid token'
       });
     }
-    
+
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
         message: 'Token expired'
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Server authentication error'

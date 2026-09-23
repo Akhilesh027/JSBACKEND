@@ -1,4 +1,5 @@
 const Estimation = require("../models/Estimation");
+const { sendWhatsAppMessage } = require("../../../shared/services/whatsappService");
 
 const safeParse = (value) => {
   try {
@@ -7,6 +8,47 @@ const safeParse = (value) => {
     return {};
   }
 };
+
+function sendVendorWhatsAppUpdate(estimation) {
+  setImmediate(async () => {
+    try {
+      const clientPhone =
+        estimation.userDetails?.phone ||
+        estimation.clientPhone ||
+        "";
+      if (!clientPhone) return;
+
+      const clientName = estimation.clientName || estimation.userDetails?.clientName || "Client";
+      const projectName = estimation.projectName || "Interior / Furniture Project";
+      const step = estimation.step || "Estimation";
+
+      let msg = "";
+      if (step === "Quotation") {
+        const qAmt = estimation.quotationDetails?.quotationAmount || estimation.estimatedCost || "—";
+        const qNotes = estimation.quotationDetails?.notes || "Quotation submitted for your review.";
+        msg = `📋 *Project Quotation Ready - JS GALLOR*\n\nHello *${clientName}*,\nA quotation for your project *${projectName}* has been prepared:\n\n💰 *Quote Amount:* ₹${qAmt}\n📝 *Details:* ${qNotes}\n\nOur team is ready to assist you with any questions.`;
+      } else if (step === "Final Order") {
+        const stage = estimation.finalOrder?.currentStage || "Order Confirmed & Work Started";
+        msg = `🛠️ *Project Order Confirmed - JS GALLOR*\n\nHello *${clientName}*,\nWork on your project *${projectName}* has officially commenced!\n\n📌 *Current Stage:* ${stage}\n\nWe will keep you posted as milestones progress.`;
+      } else if (step === "Update") {
+        const upd = estimation.updatesSection || {};
+        const title = upd.progressTitle || upd.updateType || "Project Progress Update";
+        const note = upd.progressNote || "New milestone reached";
+        const nextAction = upd.nextAction ? `\n⏳ *Next Step:* ${upd.nextAction}` : "";
+        msg = `🔔 *Project Update - JS GALLOR*\n\nHello *${clientName}*,\nHere is the latest progress update on *${projectName}*:\n\n📌 *${title}*\n📝 ${note}${nextAction}\n\n_Thank you for partnering with JS GALLOR._`;
+      } else if (step === "Closing") {
+        msg = `🎉 *Project Handover Completed - JS GALLOR*\n\nHello *${clientName}*,\nCongratulations! Your project *${projectName}* has reached completion and handover.\n\nThank you for trusting JS GALLOR with your space.`;
+      }
+
+      if (msg) {
+        await sendWhatsAppMessage(clientPhone, msg);
+        console.log(`✅ [VendorWhatsApp] Sent ${step} update to ${clientPhone}`);
+      }
+    } catch (err) {
+      console.error("❌ [VendorWhatsApp] Error sending update:", err.message);
+    }
+  });
+}
 
 // ========== CREATE ESTIMATION ==========
 // Expects vendorId in request body (form-data or JSON)
@@ -62,6 +104,8 @@ exports.createEstimation = async (req, res) => {
       updateAttachments: req.files?.updateAttachments?.map((f) => f.path) || [],
       closingImages: req.files?.closingImages?.map((f) => f.path) || [],
     });
+
+    sendVendorWhatsAppUpdate(estimation);
 
     return res.status(201).json({
       success: true,
@@ -167,6 +211,8 @@ exports.updateEstimation = async (req, res) => {
     }
 
     await estimation.save();
+
+    sendVendorWhatsAppUpdate(estimation);
 
     return res.status(200).json({
       success: true,
