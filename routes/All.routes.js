@@ -9,6 +9,7 @@ const luxuryRoutes = require('../platforms/luxury-website/routes/luxury.routes')
 const adminRoutes = require('../platforms/Admin/routes/adminCustomers.routes');
 const VendorRoutes = require('../platforms/Vendor/routes/vendorRoutes');
 const estimateRoutes = require("../platforms/MainLanding/Routs/estimateRoutes");
+const interiorRoutes = require("../platforms/Interior/routes/interiorInquiry.routes");
 // ip rate limit need to add middleware for all routes after completion  
 const { vendorLimiter, ecommerceLimiter, adminLimiter  } = require("../shared/middleware/rateLimiter");
 const { default: googleAuth } = require("../platforms/Auth/google");
@@ -24,6 +25,7 @@ router.use('/', VendorRoutes);
 router.post("/api/auth/google", googleAuth);
 router.use("/api/payments", require("../routes/Payment"));
 router.use("/api/estimates", estimateRoutes);
+router.use("/api/interior", interiorRoutes);
 router.use("/api/public/orders", require("./publicOrderRoutes"));
 router.use("/api/whatsapp", require("./whatsappRoutes"));
 router.use("/", require("./bannerRoutes"));
