@@ -262,9 +262,30 @@ function sendOrderStatusNotification(orderId, website, newStatus, note = "") {
           statusMsg = `📦 *Order Update - JS GALLOR*\n\nHello *${customerName}*,\nYour order *#${invoiceNo}* status is now: *${statusUpper}*.\n${note ? `Note: ${note}\n` : ""}\n_Thank you for choosing JS GALLOR._`;
       }
 
+      const items = Array.isArray(order.items) ? order.items : [];
+      const productSummary = items.length > 0
+        ? items.map((it) => it.productSnapshot?.name || it.name || it.title || "Item").join(", ")
+        : "Furniture";
+      const rawTotal = order.pricing?.total || order.totals?.total || 0;
+      const formattedAmount = `${Number(rawTotal).toLocaleString("en-IN")}/-`;
+
+      // Approved Template: ecommerce_order_confirmation
+      // Variables: 1: Name, 2: Order ID + Status, 3: Product, 4: Amount
+      const templateParams = [
+        customerName || "Customer",
+        `${invoiceNo} [Status: ${statusUpper}]`,
+        productSummary || "Furniture",
+        formattedAmount || "0/-",
+      ];
+
       if (customerPhone) {
-        await sendWhatsAppMessage(customerPhone, statusMsg);
-        console.log(`✅ [OrderStatus] Status update (${newStatus}) sent via WhatsApp to ${customerPhone}`);
+        const waResult = await sendWhatsAppTemplate(customerPhone, "ecommerce_order_confirmation", templateParams);
+        if (waResult.success) {
+          console.log(`✅ [OrderStatus] Status update (${newStatus}) sent via WhatsApp template to ${customerPhone}`);
+        } else {
+          console.warn(`⚠️ [OrderStatus] Template dispatch failed, falling back to text:`, waResult.error);
+          await sendWhatsAppMessage(customerPhone, statusMsg);
+        }
       }
     } catch (err) {
       console.error(`❌ [OrderStatus] Error sending status notification for ${orderId}:`, err.message);

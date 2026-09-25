@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const LuxuryOrder = require("../../luxury-website/models/luxury_orders");
 const User = require("../../luxury-website/models/luxury_customers");
+const { sendOrderStatusNotification } = require("../../../shared/services/orderNotificationService");
 
 /* --------------------------------------------------
 LOGGER HELPERS
@@ -283,6 +284,9 @@ exports.approveLuxuryOrder = async (req, res) => {
 
     logInfo("Order approved successfully", { id });
 
+    // Trigger WhatsApp Status Template Notification
+    sendOrderStatusNotification(order._id, "luxury", "approved");
+
     const enriched = await getEnrichedOrderById(id);
 
     return res.json({
@@ -337,6 +341,9 @@ exports.confirmLuxuryOrder = async (req, res) => {
     await order.save();
 
     logInfo("Order confirmed", { id });
+
+    // Trigger WhatsApp Status Template Notification
+    sendOrderStatusNotification(order._id, "luxury", "confirmed");
 
     const enriched = await getEnrichedOrderById(id);
 
@@ -405,6 +412,9 @@ exports.updateLuxuryOrderStatus = async (req, res) => {
     await order.save();
 
     logInfo("Status updated successfully", { id, next });
+
+    // Trigger WhatsApp Status Template Notification
+    sendOrderStatusNotification(order._id, "luxury", next, req.body?.note || "");
 
     const enriched = await getEnrichedOrderById(id);
 
