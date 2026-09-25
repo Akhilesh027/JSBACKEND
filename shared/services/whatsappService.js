@@ -10,9 +10,15 @@ function parsePhoneNumber(phone) {
   if (!digits) return null;
 
   let localNumber = digits;
-  // If 12 digits starting with 91, strip 91
+  // If 12 digits starting with 91 (e.g. +919550379505) -> strip 91
   if (digits.length === 12 && digits.startsWith("91")) {
     localNumber = digits.substring(2);
+  } else if (digits.length === 11 && digits.startsWith("0")) {
+    // If 11 digits starting with 0 (e.g. 09550379505) -> strip 0
+    localNumber = digits.substring(1);
+  } else if (digits.length > 10) {
+    // Extract last 10 digits
+    localNumber = digits.slice(-10);
   }
 
   return { localNumber, fullFormatted: localNumber };

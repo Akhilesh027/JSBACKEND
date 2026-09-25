@@ -25,19 +25,13 @@ function sendOrderNotifications(orderId, website) {
 }
 
 async function processOrderNotifications(orderId, website) {
-  // 1. Generate PDF Buffer and Order details
-  let pdfBuffer = null;
+  // 1. Load Order details immediately
   let order = null;
-
   try {
-    const res = await generateOrderInvoicePdfBuffer({ website, orderId });
-    pdfBuffer = res.buffer;
-    order = res.order;
-  } catch (err) {
-    console.error(`❌ [OrderNotifications] Failed to generate invoice PDF for ${orderId}:`, err.message);
-    // Attempt to load order without PDF
     const res = await findOrderAndDetails({ website, orderId });
     order = res.order;
+  } catch (err) {
+    console.error(`❌ [OrderNotifications] Failed to load order ${orderId}:`, err.message);
   }
 
   if (!order) {
@@ -54,7 +48,7 @@ async function processOrderNotifications(orderId, website) {
     order.addressDetails?.fullName ||
     order.shippingAddress?.fullName ||
     order.shippingAddress?.firstName ||
-    "Valued Customer";
+    "Customer";
 
   const customerEmail =
     order.userDetails?.email ||
@@ -73,22 +67,71 @@ async function processOrderNotifications(orderId, website) {
   const invoiceDownloadUrl = `${publicApiBase}/api/public/orders/${website}/${order._id}/invoice.pdf`;
 
   const items = Array.isArray(order.items) ? order.items : [];
-  const itemsTextList = items
-    .map((it) => {
-      const name = it.productSnapshot?.name || it.name || it.title || "Item";
-      const qty = it.quantity || 1;
-      const price = formatINR(it.finalPrice ?? it.price ?? it.productSnapshot?.price ?? 0);
-      return `• ${name} (x${qty}) - ${price}`;
-    })
-    .join("\n");
+  const productSummary = items.length > 0
+    ? items.map((it) => it.productSnapshot?.name || it.name || it.title || "Item").join(", ")
+    : "Furniture";
 
-  const totalAmount = formatINR(order.pricing?.total || order.totals?.total || 0);
+  const rawTotal = order.pricing?.total || order.totals?.total || 0;
+  const formattedAmount = `${Number(rawTotal).toLocaleString("en-IN")}/-`;
+  const totalAmount = formatINR(rawTotal);
 
   // -------------------------------------------------------------
-  // 2. Dispatch Confirmation Email with PDF Attachment
+  // 2. Dispatch Customer WhatsApp TEMPLATE ONLY
+  // -------------------------------------------------------------
+  if (customerPhone) {
+    try {
+      console.log(`📱 [OrderNotifications] Sending WhatsApp template to: ${customerPhone}...`);
+
+      // Template: ecommerce_order_confirmation
+      // Variables: 1: Name, 2: Order Number, 3: Product Summary, 4: Order Amount
+      const templateParams = [
+        customerName || "Customer",
+        invoiceNo || "JS01-26",
+        productSummary || "Furniture",
+        formattedAmount || "0/-",
+      ];
+
+      const waResult = await sendWhatsAppTemplate(customerPhone, "ecommerce_order_confirmation", templateParams);
+      if (waResult.success) {
+        console.log(`✅ [OrderNotifications] WhatsApp template message delivered to ${customerPhone}`);
+      } else {
+        console.error(`❌ [OrderNotifications] WhatsApp template dispatch failed:`, waResult.error);
+      }
+    } catch (waErr) {
+      console.error(`❌ [OrderNotifications] WhatsApp dispatch exception for ${customerPhone}:`, waErr.message);
+    }
+  } else {
+    console.warn(`⚠️ [OrderNotifications] No phone number found for order ${orderId}, skipping WhatsApp.`);
+  }
+
+  // -------------------------------------------------------------
+  // 3. Dispatch Admin Alert
+  // -------------------------------------------------------------
+  const adminPhone = process.env.ADMIN_NOTIFICATION_PHONE;
+  if (adminPhone) {
+    try {
+      const adminOrderMsg = `💰 *NEW ORDER RECEIVED - JS GALLOR*\n\n🛒 *Order:* #${invoiceNo} (${website.toUpperCase()})\n👤 *Customer:* ${customerName}\n📞 *Phone:* ${customerPhone}\n📧 *Email:* ${customerEmail || "N/A"}\n💵 *Total Amount:* ${totalAmount}\n💳 *Payment:* ${order.payment?.method || "Online"} (${order.payment?.status || "Pending"})\n📄 *Invoice:* ${invoiceDownloadUrl}\n\n👉 *Open Admin Portal:* https://admin.jsgallor.com`;
+
+      await sendWhatsAppMessage(adminPhone, adminOrderMsg);
+      console.log(`✅ [OrderNotifications] Admin order alert sent to ${adminPhone}`);
+    } catch (err) {
+      console.error(`❌ [OrderNotifications] Admin WhatsApp alert failed:`, err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 4. Generate PDF Invoice & Send Email (Asynchronous)
   // -------------------------------------------------------------
   if (customerEmail && transporter) {
     try {
+      let pdfBuffer = null;
+      try {
+        const res = await generateOrderInvoicePdfBuffer({ website, orderId });
+        pdfBuffer = res?.buffer;
+      } catch (pdfErr) {
+        console.warn(`⚠️ [OrderNotifications] PDF buffer generation error for email (continuing without attachment):`, pdfErr.message);
+      }
+
       console.log(`✉️ [OrderNotifications] Sending invoice email to: ${customerEmail}...`);
       const attachments = [];
       if (pdfBuffer && pdfBuffer.length) {
@@ -154,60 +197,6 @@ async function processOrderNotifications(orderId, website) {
       console.log(`✅ [OrderNotifications] Email delivered successfully to ${customerEmail}`);
     } catch (mailErr) {
       console.error(`❌ [OrderNotifications] Failed sending email to ${customerEmail}:`, mailErr.message);
-    }
-  } else {
-    console.warn(`⚠️ [OrderNotifications] No valid email found for order ${orderId}, skipping email.`);
-  }
-
-  // -------------------------------------------------------------
-  // 3. Dispatch WhatsApp Confirmation (Using Approved Template)
-  // -------------------------------------------------------------
-  if (customerPhone) {
-    try {
-      console.log(`📱 [OrderNotifications] Sending WhatsApp template confirmation to: ${customerPhone}...`);
-
-      const productSummary = items.length > 0
-        ? items.map((it) => it.productSnapshot?.name || it.name || it.title || "Item").join(", ")
-        : "Furniture";
-      const rawTotal = order.pricing?.total || order.totals?.total || 0;
-      const formattedAmount = `${Number(rawTotal).toLocaleString("en-IN")}/-`;
-
-      // Approved Template: ecommerce_order_confirmation
-      // Params: 1: Name, 2: Order Number, 3: Product Name/Summary, 4: Order Amount
-      const templateParams = [
-        customerName || "Customer",
-        invoiceNo || "JS01-26",
-        productSummary || "Items",
-        formattedAmount || "0/-",
-      ];
-
-      const waResult = await sendWhatsAppTemplate(customerPhone, "ecommerce_order_confirmation", templateParams);
-      if (waResult.success) {
-        console.log(`✅ [OrderNotifications] WhatsApp template message delivered to ${customerPhone}`);
-      } else {
-        console.warn(`⚠️ [OrderNotifications] WhatsApp template dispatch failed, falling back to text message:`, waResult.error);
-        const fallbackMsg = `Hello ${customerName},\n\nThank you for shopping with Jaghsora Luxore.\n\nYour order ${invoiceNo} has been confirmed.\n\nProduct: ${productSummary}\nOrder Amount: ₹${formattedAmount}\n\nInvoice: ${invoiceDownloadUrl}\n\nWe will notify you when your order is dispatched.`;
-        await sendWhatsAppMessage(customerPhone, fallbackMsg);
-      }
-    } catch (waErr) {
-      console.error(`❌ [OrderNotifications] Failed sending WhatsApp to ${customerPhone}:`, waErr.message);
-    }
-  } else {
-    console.warn(`⚠️ [OrderNotifications] No valid phone found for order ${orderId}, skipping WhatsApp.`);
-  }
-
-  // -------------------------------------------------------------
-  // 4. Dispatch Instant Order Alert to Admin WhatsApp
-  // -------------------------------------------------------------
-  const adminPhone = process.env.ADMIN_NOTIFICATION_PHONE;
-  if (adminPhone) {
-    try {
-      const adminOrderMsg = `💰 *NEW ORDER RECEIVED - JS GALLOR*\n\n🛒 *Order:* #${invoiceNo} (${website.toUpperCase()})\n👤 *Customer:* ${customerName}\n📞 *Phone:* ${customerPhone}\n📧 *Email:* ${customerEmail || "N/A"}\n💵 *Total Amount:* ${totalAmount}\n💳 *Payment:* ${order.payment?.method || "Online"} (${order.payment?.status || "Pending"})\n📄 *Invoice:* ${invoiceDownloadUrl}\n\n👉 *Open Admin Portal:* https://admin.jsgallor.com`;
-
-      await sendWhatsAppMessage(adminPhone, adminOrderMsg);
-      console.log(`✅ [OrderNotifications] Admin order alert sent to ${adminPhone}`);
-    } catch (err) {
-      console.error(`❌ [OrderNotifications] Admin WhatsApp order alert failed:`, err.message);
     }
   }
 }
@@ -283,8 +272,7 @@ function sendOrderStatusNotification(orderId, website, newStatus, note = "") {
         if (waResult.success) {
           console.log(`✅ [OrderStatus] Status update (${newStatus}) sent via WhatsApp template to ${customerPhone}`);
         } else {
-          console.warn(`⚠️ [OrderStatus] Template dispatch failed, falling back to text:`, waResult.error);
-          await sendWhatsAppMessage(customerPhone, statusMsg);
+          console.error(`❌ [OrderStatus] WhatsApp template dispatch failed for ${customerPhone}:`, waResult.error);
         }
       }
     } catch (err) {
