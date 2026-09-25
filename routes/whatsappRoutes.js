@@ -162,4 +162,42 @@ router.post("/send", async (req, res) => {
   }
 });
 
+/**
+ * GET & POST /api/whatsapp/send-email-test
+ * Query/Body: { email: string }
+ */
+const transporter = require("../platforms/Admin/utils/mailer");
+
+router.all("/send-email-test", async (req, res) => {
+  try {
+    const toEmail = req.body?.email || req.query?.email || "directorjsgallor@gmail.com";
+    if (!toEmail) {
+      return res.status(400).json({ success: false, message: "email parameter is required" });
+    }
+
+    const info = await transporter.sendMail({
+      from: process.env.SMTP_FROM || `"JS GALLOR" <${process.env.SMTP_USER}>`,
+      to: toEmail,
+      subject: "Test Email from JS GALLOR (Hostinger SMTP)",
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #222; border: 1px solid #ddd; border-radius: 8px;">
+          <h2 style="color: #8B5A2B;">JS GALLOR Email System Active</h2>
+          <p>This is a verification email sent from <b>${process.env.SMTP_USER}</b> via Hostinger SMTP.</p>
+          <p>Timestamp: ${new Date().toLocaleString("en-IN")}</p>
+          <p style="color: #0a7a3a; font-weight: bold;">Status: Delivered Successfully ✅</p>
+        </div>
+      `,
+    });
+
+    return res.json({
+      success: true,
+      message: `Test email sent successfully to ${toEmail}`,
+      messageId: info.messageId,
+    });
+  } catch (err) {
+    console.error("Email test error:", err);
+    return res.status(500).json({ success: false, message: "Email send failed", error: err.message });
+  }
+});
+
 module.exports = router;

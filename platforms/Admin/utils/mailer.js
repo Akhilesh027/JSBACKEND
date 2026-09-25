@@ -28,8 +28,11 @@ console.log("📨 SMTP CONFIG:", {
 const transporter = nodemailer.createTransport({
   host,
   port,
-  secure, // true for 465
+  secure: port === 465, // true for 465, false for other ports
   auth: { user, pass },
+  tls: {
+    rejectUnauthorized: false,
+  },
 });
 
 // optional verify
