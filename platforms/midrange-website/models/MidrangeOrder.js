@@ -36,7 +36,7 @@ const midrangeOrderSchema = new mongoose.Schema(
       image: { type: String, default: "" },
       quantity: { type: Number, required: true, min: 1 },
       price: { type: Number, required: true },
-      discountPercent: { type: Number, default: 10 },
+      discountPercent: { type: Number, default: 0 },
       discountAmount: { type: Number, default: 0 },
       finalPrice: { type: Number, required: true },
     }],

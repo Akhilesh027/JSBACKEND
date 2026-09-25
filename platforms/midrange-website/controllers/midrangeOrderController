@@ -14,12 +14,10 @@ const { sendOrderNotifications } = require("../../../shared/services/orderNotifi
 const WEBSITE = "mid_range";
 const ALLOWED_TIER = "mid_range";
 const ALLOWED_STATUS = "approved";
-const DISCOUNT_PERCENT = 10;
 
-// Helpers (unchanged) ...
-
-function computeDiscount(price) {
-  const discountAmount = Math.round((Number(price || 0) * DISCOUNT_PERCENT) / 100);
+function computeDiscount(price, discountPercent = 0) {
+  const safePercent = Number(discountPercent || 0);
+  const discountAmount = safePercent > 0 ? Math.round((Number(price || 0) * safePercent) / 100) : 0;
   const finalPrice = Number(price || 0) - discountAmount;
   return { discountAmount, finalPrice };
 }
@@ -148,7 +146,8 @@ exports.placeOrder = async (req, res) => {
         const p = pMap.get(String(it.productId));
         if (!p) continue;
         const qty = Math.max(1, Number(it.quantity) || 1);
-        const { discountAmount, finalPrice } = computeDiscount(p.price);
+        const discountPercent = Number(p.discount || 0);
+        const { discountAmount, finalPrice } = computeDiscount(p.price, discountPercent);
 
         orderItems.push({
           productId: p._id,
@@ -158,7 +157,7 @@ exports.placeOrder = async (req, res) => {
           image: p.image || "",
           quantity: qty,
           price: Number(p.price || 0),
-          discountPercent: DISCOUNT_PERCENT,
+          discountPercent,
           discountAmount,
           finalPrice,
         });
