@@ -1,6 +1,6 @@
 const transporter = require("../../platforms/Admin/utils/mailer");
 const { generateOrderInvoicePdfBuffer, findOrderAndDetails } = require("./pdfService");
-const { sendWhatsAppMessage } = require("./whatsappService");
+const { sendWhatsAppMessage, sendWhatsAppTemplate } = require("./whatsappService");
 
 const formatINR = (n) =>
   new Intl.NumberFormat("en-IN", {
@@ -160,18 +160,34 @@ async function processOrderNotifications(orderId, website) {
   }
 
   // -------------------------------------------------------------
-  // 3. Dispatch Structured WhatsApp Message with Invoice Link
+  // 3. Dispatch WhatsApp Confirmation (Using Approved Template)
   // -------------------------------------------------------------
   if (customerPhone) {
     try {
-      console.log(`📱 [OrderNotifications] Sending WhatsApp message to: ${customerPhone}...`);
-      const waMessage = `🎉 *Order Confirmed! - JS GALLOR*\n\nHello *${customerName}*,\nThank you for shopping with us! Your order *#${invoiceNo}* has been placed successfully.\n\n🛒 *Items Ordered:*\n${itemsTextList}\n\n💰 *Total Amount:* ${totalAmount}\n💳 *Payment Method:* ${order.payment?.method || "Online"}\n\n📄 *View & Download Your Invoice (PDF):*\n${invoiceDownloadUrl}\n\nOur team is preparing your package. We will update you once it is dispatched!\n\n_For any queries, reply here or email directorjsgallor@gmail.com._`;
+      console.log(`📱 [OrderNotifications] Sending WhatsApp template confirmation to: ${customerPhone}...`);
 
-      const waResult = await sendWhatsAppMessage(customerPhone, waMessage);
+      const productSummary = items.length > 0
+        ? items.map((it) => it.productSnapshot?.name || it.name || it.title || "Item").join(", ")
+        : "Furniture";
+      const rawTotal = order.pricing?.total || order.totals?.total || 0;
+      const formattedAmount = `${Number(rawTotal).toLocaleString("en-IN")}/-`;
+
+      // Approved Template: ecommerce_order_confirmation
+      // Params: 1: Name, 2: Order Number, 3: Product Name/Summary, 4: Order Amount
+      const templateParams = [
+        customerName || "Customer",
+        invoiceNo || "JS01-26",
+        productSummary || "Items",
+        formattedAmount || "0/-",
+      ];
+
+      const waResult = await sendWhatsAppTemplate(customerPhone, "ecommerce_order_confirmation", templateParams);
       if (waResult.success) {
-        console.log(`✅ [OrderNotifications] WhatsApp message delivered to ${customerPhone}`);
+        console.log(`✅ [OrderNotifications] WhatsApp template message delivered to ${customerPhone}`);
       } else {
-        console.warn(`⚠️ [OrderNotifications] WhatsApp dispatch returned failure:`, waResult.error);
+        console.warn(`⚠️ [OrderNotifications] WhatsApp template dispatch failed, falling back to text message:`, waResult.error);
+        const fallbackMsg = `Hello ${customerName},\n\nThank you for shopping with Jaghsora Luxore.\n\nYour order ${invoiceNo} has been confirmed.\n\nProduct: ${productSummary}\nOrder Amount: ₹${formattedAmount}\n\nInvoice: ${invoiceDownloadUrl}\n\nWe will notify you when your order is dispatched.`;
+        await sendWhatsAppMessage(customerPhone, fallbackMsg);
       }
     } catch (waErr) {
       console.error(`❌ [OrderNotifications] Failed sending WhatsApp to ${customerPhone}:`, waErr.message);

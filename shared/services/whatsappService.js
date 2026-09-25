@@ -81,6 +81,81 @@ async function sendWhatsAppMessage(phone, messageText, options = {}) {
 }
 
 /**
+ * Sends a WhatsApp Template message via MyOperator Chat API (Meta Cloud API)
+ * @param {string} phone - Recipient phone number
+ * @param {string} templateName - The pre-approved template name (e.g., "ecommerce_order_confirmation")
+ * @param {string[]} bodyParameters - Array of string values for variables {{1}}, {{2}}, {{3}}, etc.
+ * @param {string} [languageCode="en"] - Language code (e.g. "en" or "en_US")
+ */
+async function sendWhatsAppTemplate(phone, templateName, bodyParameters = [], languageCode = "en") {
+  const parsed = parsePhoneNumber(phone);
+  if (!parsed) {
+    console.warn("⚠️ [WhatsApp] Invalid phone number provided:", phone);
+    return { success: false, error: "Invalid phone number" };
+  }
+
+  const apiUrl = process.env.WHATSAPP_API_URL || "https://publicapi.myoperator.co/chat/messages";
+  const apiKey = process.env.WHATSAPP_API_KEY;
+  const companyId = process.env.WHATSAPP_COMPANY_ID;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!apiKey || !companyId || !phoneNumberId) {
+    console.error("❌ [WhatsApp] Missing credentials in .env");
+    return { success: false, error: "Missing WhatsApp credentials in .env" };
+  }
+
+  const myopRefId = `wa_tmpl_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+  // Formatted parameters for MyOperator (supports array and var_1..var_n object)
+  let bodyPayload = {};
+  if (Array.isArray(bodyParameters)) {
+    bodyParameters.forEach((val, idx) => {
+      bodyPayload[`var_${idx + 1}`] = String(val ?? "");
+      bodyPayload[`${idx + 1}`] = String(val ?? "");
+    });
+  } else if (typeof bodyParameters === "object" && bodyParameters !== null) {
+    bodyPayload = bodyParameters;
+  }
+
+  const payload = {
+    phone_number_id: phoneNumberId,
+    customer_country_code: "91",
+    customer_number: parsed.localNumber,
+    data: {
+      type: "template",
+      context: {
+        template_name: templateName,
+        template_language: languageCode || "en",
+        body: bodyPayload,
+      },
+    },
+    reply_to: null,
+    myop_ref_id: myopRefId,
+  };
+
+  try {
+    console.log(`[WhatsApp Template] Dispatching '${templateName}' to ${parsed.fullFormatted} with body:`, bodyPayload);
+    const response = await axios.post(apiUrl, payload, {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "X-MYOP-COMPANY-ID": companyId,
+      },
+      timeout: 10000,
+    });
+
+    console.log("✅ [WhatsApp Template] Sent successfully:", response.data);
+    return { success: true, data: response.data, refId: myopRefId };
+  } catch (err) {
+    const errorDetails = err.response?.data || err.message;
+    console.error(`❌ [WhatsApp Template] Dispatch error for template '${templateName}':`, errorDetails);
+    return { success: false, error: errorDetails };
+  }
+}
+
+/**
  * Verifies WhatsApp (MyOperator) credentials & connectivity on server boot
  */
 async function verifyWhatsAppConnection() {
@@ -126,8 +201,47 @@ async function verifyWhatsAppConnection() {
   }
 }
 
+/**
+ * Fetches all registered & approved WhatsApp templates from MyOperator
+ */
+async function getWhatsAppTemplates() {
+  const apiKey = process.env.WHATSAPP_API_KEY;
+  const companyId = process.env.WHATSAPP_COMPANY_ID;
+
+  if (!apiKey || !companyId) {
+    return { success: false, error: "Missing API credentials" };
+  }
+
+  try {
+    const res = await axios.get("https://publicapi.myoperator.co/chat/templates?limit=50&offset=0", {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "X-MYOP-COMPANY-ID": companyId,
+      },
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+
+    return {
+      success: res.status === 200,
+      status: res.status,
+      data: res.data,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.response?.data || err.message,
+    };
+  }
+}
+
 module.exports = {
   parsePhoneNumber,
   sendWhatsAppMessage,
+  sendWhatsAppTemplate,
+  getWhatsAppTemplates,
   verifyWhatsAppConnection,
 };
+
+

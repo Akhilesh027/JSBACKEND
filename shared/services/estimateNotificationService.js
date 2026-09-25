@@ -1,5 +1,5 @@
 const transporter = require("../../platforms/Admin/utils/mailer");
-const { sendWhatsAppMessage } = require("./whatsappService");
+const { sendWhatsAppMessage, sendWhatsAppTemplate } = require("./whatsappService");
 
 /**
  * Asynchronously sends estimate notifications:
@@ -265,14 +265,36 @@ async function processEstimateNotifications(estimate) {
   const adminPhone = process.env.ADMIN_NOTIFICATION_PHONE || "9550379505";
   if (adminPhone) {
     try {
-      console.log(`📱 [EstimateNotifications] Sending admin WhatsApp lead alert to: ${adminPhone}...`);
-      const adminWaMsg = `🚨 *NEW ESTIMATION LEAD - JS GALLOR*\n\n📋 *Inquiry:* ${flowTitle} (#${id})\n👤 *Client:* ${name}\n📞 *Phone:* ${phone}\n📧 *Email:* ${email || "Not provided"}\n📍 *City:* ${city}\n🏡 *Property:* ${floorplan} (${propertyType})\n💰 *Budget:* ${budgetRange}\n${planFileLink ? `📄 *Plan File:* ${planFileLink}\n` : ""}\n👉 *Open Admin Portal:* https://admin.jsgallor.com`;
+      console.log(`📱 [EstimateNotifications] Sending admin WhatsApp lead template alert to: ${adminPhone}...`);
 
-      const adminRes = await sendWhatsAppMessage(adminPhone, adminWaMsg);
+      const requirementsSummary = [
+        ...interiorServices.map((s) => s.label),
+        ...furnitureItems.map((f) => f.label),
+      ].join(", ") || "Complete Consultation";
+
+      // Approved Template: copy_new_interior_enquiry_alert
+      // 1: Customer, 2: Mobile, 3: City, 4: Estimate ID, 5: Floor Plan,
+      // 6: Purpose, 7: Property Type, 8: Budget, 9: Requirements, 10: Floor Plan Size
+      const templateParams = [
+        name || "Valued Customer",
+        phone || "N/A",
+        city || "Hyderabad",
+        id || "EST-01",
+        floorplan || "2BHK",
+        purpose || "Self",
+        propertyType || "Apartment",
+        budgetRange || "Standard",
+        requirementsSummary.slice(0, 100),
+        plotSize || "Standard Sft",
+      ];
+
+      const adminRes = await sendWhatsAppTemplate(adminPhone, "copy_new_interior_enquiry_alert", templateParams);
       if (adminRes.success) {
-        console.log(`✅ [EstimateNotifications] Admin lead WhatsApp alert sent to ${adminPhone}`);
+        console.log(`✅ [EstimateNotifications] Admin lead WhatsApp alert sent via template to ${adminPhone}`);
       } else {
-        console.warn(`⚠️ [EstimateNotifications] Admin WhatsApp returned failure:`, adminRes.error);
+        console.warn(`⚠️ [EstimateNotifications] Admin WhatsApp template dispatch failed, falling back to text:`, adminRes.error);
+        const fallbackAdminMsg = `🚨 *NEW ESTIMATION LEAD - JS GALLOR*\n\n📋 *Inquiry:* ${flowTitle} (#${id})\n👤 *Client:* ${name}\n📞 *Phone:* ${phone}\n📧 *Email:* ${email || "Not provided"}\n📍 *City:* ${city}\n🏡 *Property:* ${floorplan} (${propertyType})\n💰 *Budget:* ${budgetRange}\n${planFileLink ? `📄 *Plan File:* ${planFileLink}\n` : ""}\n👉 *Open Admin Portal:* https://admin.jsgallor.com`;
+        await sendWhatsAppMessage(adminPhone, fallbackAdminMsg);
       }
     } catch (adminWaErr) {
       console.error(`❌ [EstimateNotifications] Admin WhatsApp alert failed:`, adminWaErr.message);
