@@ -205,9 +205,10 @@ const { getCAPDashboard } = require("../controllers/capDashboard.js");
 const { emailInvoice, downloadInvoicePdf } = require("../controllers/invoiceController.js");
 
 router.get("/api/admin/cap/dashboard", getCAPDashboard);
-router.use("/api/admin/auth", loginAdmin);
 router.post("/api/admin/:website/orders/:id/invoice/email", emailInvoice);
 router.get("/api/admin/:website/orders/:id/invoice/pdf", downloadInvoicePdf);
+router.post("/api/admin/orders/:id/invoice/email", emailInvoice);
+router.get("/api/admin/orders/:id/invoice/pdf", downloadInvoicePdf);
 
 
 

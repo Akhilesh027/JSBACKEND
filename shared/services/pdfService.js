@@ -33,13 +33,32 @@ function getOrderModel(website) {
 }
 
 async function findOrderAndDetails({ website, orderId }) {
-  const OrderModel = getOrderModel(website);
-  const order = await OrderModel.findById(orderId).lean();
+  let resolvedWebsite = normalizeWebsite(website);
+  const OrderModel = getOrderModel(resolvedWebsite);
+  let order = await OrderModel.findById(orderId).lean();
+
+  if (!order) {
+    const models = [
+      { name: "affordable", model: AffordableOrder },
+      { name: "midrange", model: MidrangeOrder },
+      { name: "luxury", model: LuxuryOrder },
+    ];
+    for (const m of models) {
+      if (m.model !== OrderModel) {
+        order = await m.model.findById(orderId).lean();
+        if (order) {
+          resolvedWebsite = m.name;
+          break;
+        }
+      }
+    }
+  }
+
   if (!order) return { order: null };
 
   let userDetails = null;
   const ownerId = order.userId || order.customerId || order.customer;
-  const w = normalizeWebsite(website);
+  const w = resolvedWebsite;
 
   try {
     if (w === "affordable" && ownerId) {
@@ -345,12 +364,19 @@ async function htmlToPdfBuffer(html) {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-first-run",
+      "--no-zygote",
     ],
   });
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    try {
+      await page.setContent(html, { waitUntil: "load", timeout: 15000 });
+    } catch {
+      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 10000 });
+    }
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,

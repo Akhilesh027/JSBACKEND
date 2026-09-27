@@ -10,6 +10,7 @@ const MidrangeOrder = require("../../midrange-website/models/MidrangeOrder");
 const LuxuryOrder = require("../../luxury-website/models/luxury_orders");
 
 const AffordableCustomer = require("../../affordable-website/models/affordable_customers");
+const MidrangeCustomer = require("../../midrange-website/models/midrange_customers");
 const LuxuryCustomer = require("../../luxury-website/models/luxury_customers");
 
 // -------------------------
@@ -39,17 +40,35 @@ function getOrderModel(website) {
 }
 
 async function findOrderAndDetails({ website, orderId }) {
-  const OrderModel = getOrderModel(website);
+  let resolvedWebsite = normalizeWebsite(website);
+  const OrderModel = getOrderModel(resolvedWebsite);
 
-  const order = await OrderModel.findById(orderId).lean();
+  let order = await OrderModel.findById(orderId).lean();
+  if (!order) {
+    // Fallback: search across all models in case website param was mismatched
+    const models = [
+      { name: "affordable", model: AffordableOrder },
+      { name: "midrange", model: MidrangeOrder },
+      { name: "luxury", model: LuxuryOrder },
+    ];
+    for (const m of models) {
+      if (m.model !== OrderModel) {
+        order = await m.model.findById(orderId).lean();
+        if (order) {
+          resolvedWebsite = m.name;
+          break;
+        }
+      }
+    }
+  }
+
   if (!order) return { order: null };
 
   let userDetails = null;
-  const ownerId = order.userId || order.customerId || order.customer || order.customerId;
+  const ownerId = order.userId || order.customerId || order.customer;
 
   try {
-    const w = normalizeWebsite(website);
-    if (w === "affordable" && ownerId) {
+    if (resolvedWebsite === "affordable" && ownerId) {
       const u = await AffordableCustomer.findById(ownerId)
         .select("name firstName lastName email phone")
         .lean();
@@ -61,9 +80,19 @@ async function findOrderAndDetails({ website, orderId }) {
           phone: u.phone,
         };
       }
-    }
-
-    if (w === "luxury" && ownerId) {
+    } else if (resolvedWebsite === "midrange" && ownerId) {
+      const u = await MidrangeCustomer.findById(ownerId)
+        .select("name firstName lastName email phone")
+        .lean();
+      if (u) {
+        userDetails = {
+          _id: u._id,
+          name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+          email: u.email,
+          phone: u.phone,
+        };
+      }
+    } else if (resolvedWebsite === "luxury" && ownerId) {
       const u = await LuxuryCustomer.findById(ownerId)
         .select("firstName lastName email phone")
         .lean();
@@ -76,8 +105,8 @@ async function findOrderAndDetails({ website, orderId }) {
         };
       }
     }
-  } catch {
-    // ignore user fetch errors
+  } catch (err) {
+    console.warn("User fetch warning for invoice:", err.message);
   }
 
   const addressLine =
@@ -403,17 +432,26 @@ async function htmlToPdfBuffer(html) {
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage", // 🔥 important for VPS
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-first-run",
+      "--no-zygote",
     ],
   });
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // Wait for DOM and images, with timeout fallback so it never hangs
+    try {
+      await page.setContent(html, { waitUntil: "load", timeout: 15000 });
+    } catch {
+      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 10000 });
+    }
 
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
+      margin: { top: "10mm", bottom: "10mm", left: "10mm", right: "10mm" },
     });
 
     return Buffer.from(pdfBuffer);
