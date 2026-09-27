@@ -166,7 +166,7 @@ function buildInvoiceHTML({ order, business }) {
     name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
     address:
       "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
-    email: "directorjsgallor@gmail.com",
+    email: "info@jsgallor.com",
     phone: "+91-XXXXXXXXXX",
     gst: "36AAHCJ1470F1ZP",
   };
@@ -351,7 +351,7 @@ function buildInvoiceHTML({ order, business }) {
 
     <div class="footer">
       <p style="margin:0 0 4px 0;">This is a computer-generated tax invoice. No signature required.</p>
-      <p style="margin:0;">Thank you for shopping with <b>JS GALLOR</b>. For inquiries, reach out to <b>directorjsgallor@gmail.com</b></p>
+      <p style="margin:0;">Thank you for shopping with <b>JS GALLOR</b>. For inquiries, reach out to <b>info@jsgallor.com</b></p>
     </div>
   </div>
 </body>

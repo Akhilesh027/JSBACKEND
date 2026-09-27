@@ -186,7 +186,7 @@ async function processOrderNotifications(orderId, website) {
               </p>
 
               <div style="margin-top: 30px; padding-top: 16px; border-top: 1px solid #eee; font-size: 12px; color: #777;">
-                <p style="margin: 0;">Need assistance? Contact our support concierge at <a href="mailto:directorjsgallor@gmail.com" style="color: #444;">directorjsgallor@gmail.com</a>.</p>
+                <p style="margin: 0;">Need assistance? Contact our support concierge at <a href="mailto:info@jsgallor.com" style="color: #444;">info@jsgallor.com</a>.</p>
               </div>
             </div>
           </div>
@@ -245,7 +245,7 @@ function sendOrderStatusNotification(orderId, website, newStatus, note = "") {
           break;
         case "rejected":
         case "cancelled":
-          statusMsg = `⚠️ *Order Update - JS GALLOR*\n\nHello *${customerName}*,\nYour order *#${invoiceNo}* status has been updated to: *${statusUpper}*.\n${note ? `Reason: ${note}\n` : ""}\nIf you have any questions or require assistance, please contact us at directorjsgallor@gmail.com.`;
+          statusMsg = `⚠️ *Order Update - JS GALLOR*\n\nHello *${customerName}*,\nYour order *#${invoiceNo}* status has been updated to: *${statusUpper}*.\n${note ? `Reason: ${note}\n` : ""}\nIf you have any questions or require assistance, please contact us at info@jsgallor.com.`;
           break;
         default:
           statusMsg = `📦 *Order Update - JS GALLOR*\n\nHello *${customerName}*,\nYour order *#${invoiceNo}* status is now: *${statusUpper}*.\n${note ? `Note: ${note}\n` : ""}\n_Thank you for choosing JS GALLOR._`;

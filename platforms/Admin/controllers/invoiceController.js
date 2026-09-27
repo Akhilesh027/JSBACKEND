@@ -174,7 +174,7 @@ function buildInvoiceHTML({ order, business }) {
     name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
     address:
       "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
-    email: "directorjsgallor@gmail.com",
+    email: "info@jsgallor.com",
     phone: "+91-XXXXXXXXXX",
     gst: "36AAHCJ1470F1ZP",
     logoUrl: "",
@@ -513,7 +513,7 @@ exports.downloadInvoicePdf = async (req, res) => {
         name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
         address:
           "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
-        email: "directorjsgallor@gmail.com",
+        email: "info@jsgallor.com",
         phone: "+91-XXXXXXXXXX",
         gst: "36AAHCJ1470F1ZP",
         logoUrl: "",
@@ -582,7 +582,7 @@ exports.emailInvoice = async (req, res) => {
         name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
         address:
           "WorkFlo Bizness Square, 4th Floor, Jubilee Enclave, Madhapur, Telangana – 500081",
-        email: "directorjsgallor@gmail.com",
+        email: "info@jsgallor.com",
         phone: "+91-XXXXXXXXXX",
         gst: "36AAHCJ1470F1ZP",
         logoUrl: "",

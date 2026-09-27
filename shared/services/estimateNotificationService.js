@@ -21,7 +21,7 @@ function sendEstimateNotifications(estimate) {
 async function processEstimateNotifications(estimate) {
   if (!estimate) return;
 
-  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || "directorjsgallor@gmail.com";
+  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || "info@jsgallor.com";
   const publicApiBase = process.env.PUBLIC_API_URL || "https://api.jsgallor.com";
 
   const id = String(estimate._id).slice(-8).toUpperCase();
@@ -194,7 +194,7 @@ async function processEstimateNotifications(estimate) {
   if (phone) {
     try {
       console.log(`📱 [EstimateNotifications] Sending WhatsApp acknowledgment to: ${phone}...`);
-      const waMessage = `✨ *Estimation Request Received - JS GALLOR*\n\nHello *${name}*,\n\nThank you for choosing *JS GALLOR*! We have successfully received your *${flowTitle}* enquiry.\n\n📋 *Enquiry Ref:* #${id}\n📍 *City:* ${city}\n🏡 *Configuration:* ${floorplan} (${propertyType})\n💰 *Budget Range:* ${budgetRange}\n\nOur specialized design consultants are currently reviewing your floorplan and specifications. *Our team will get in touch with you shortly* to share a tailored estimate and walk you through your dream project!\n\n_Have immediate questions? Reply directly to this chat or email directorjsgallor@gmail.com._`;
+      const waMessage = `✨ *Estimation Request Received - JS GALLOR*\n\nHello *${name}*,\n\nThank you for choosing *JS GALLOR*! We have successfully received your *${flowTitle}* enquiry.\n\n📋 *Enquiry Ref:* #${id}\n📍 *City:* ${city}\n🏡 *Configuration:* ${floorplan} (${propertyType})\n💰 *Budget Range:* ${budgetRange}\n\nOur specialized design consultants are currently reviewing your floorplan and specifications. *Our team will get in touch with you shortly* to share a tailored estimate and walk you through your dream project!\n\n_Have immediate questions? Reply directly to this chat or email info@jsgallor.com._`;
 
       const waRes = await sendWhatsAppMessage(phone, waMessage);
       if (waRes.success) {
@@ -247,7 +247,7 @@ async function processEstimateNotifications(estimate) {
               </table>
 
               <div style="margin-top: 30px; padding-top: 16px; border-top: 1px solid #eee; font-size: 12px; color: #777;">
-                <p style="margin: 0;">Questions? Feel free to write to us at <a href="mailto:directorjsgallor@gmail.com" style="color: #8B5A2B;">directorjsgallor@gmail.com</a>.</p>
+                <p style="margin: 0;">Questions? Feel free to write to us at <a href="mailto:info@jsgallor.com" style="color: #8B5A2B;">info@jsgallor.com</a>.</p>
               </div>
             </div>
           </div>

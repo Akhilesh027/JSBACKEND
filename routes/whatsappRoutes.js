@@ -170,7 +170,7 @@ const transporter = require("../platforms/Admin/utils/mailer");
 
 router.all("/send-email-test", async (req, res) => {
   try {
-    const toEmail = req.body?.email || req.query?.email || "directorjsgallor@gmail.com";
+    const toEmail = req.body?.email || req.query?.email || "info@jsgallor.com";
     if (!toEmail) {
       return res.status(400).json({ success: false, message: "email parameter is required" });
     }
