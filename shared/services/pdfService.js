@@ -1,5 +1,6 @@
 const puppeteer = require("puppeteer");
 const path = require("path");
+const fs = require("fs");
 
 const AffordableOrder = require("../../platforms/affordable-website/models/AffordableOrder");
 const MidrangeOrder = require("../../platforms/midrange-website/models/MidrangeOrder");
@@ -357,18 +358,51 @@ function buildInvoiceHTML({ order, business }) {
 </html>`;
 }
 
-async function htmlToPdfBuffer(html) {
-  const browser = await puppeteer.launch({
+function getPuppeteerLaunchOptions() {
+  const commonArgs = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-first-run",
+    "--no-zygote",
+  ];
+
+  const possiblePaths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_BIN,
+    process.env.CHROME_PATH,
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+    "/snap/bin/chromium",
+    "/usr/bin/google-chrome-unstable",
+  ].filter(Boolean);
+
+  let executablePath;
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      executablePath = p;
+      break;
+    }
+  }
+
+  const options = {
     headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--no-first-run",
-      "--no-zygote",
-    ],
-  });
+    args: commonArgs,
+  };
+
+  if (executablePath) {
+    options.executablePath = executablePath;
+  }
+
+  return options;
+}
+
+async function htmlToPdfBuffer(html) {
+  const launchOptions = getPuppeteerLaunchOptions();
+  const browser = await puppeteer.launch(launchOptions);
 
   try {
     const page = await browser.newPage();
