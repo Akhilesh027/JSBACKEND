@@ -19,8 +19,12 @@ const seedAdmin = async () => {
     });
     console.log("✅ MongoDB connected successfully.");
 
-    const email = "admin@gmail.com";
-    const plainPassword = "admin@123";
+    // Delete old default admin if present
+    await Admin.deleteMany({ email: "admin@gmail.com" });
+    console.log("🧹 Removed old admin@gmail.com account if present.");
+
+    const email = "info@jaghsoraluxore.com";
+    const plainPassword = "JS@2026#jj";
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
