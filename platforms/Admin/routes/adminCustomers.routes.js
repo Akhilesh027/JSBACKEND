@@ -112,6 +112,8 @@ const {
   updateAdmin
 } = require("../controllers/capAdminController");
 
+router.post("/api/admin/auth/login", loginAdmin);
+router.post("/api/admin/login", loginAdmin);
 router.post("/api/admin/cap/admins", /*protect, isCapAdmin,*/ createAdmin);
 router.get("/api/admin/cap/admins", /*protect, isCapAdmin,*/ listAdmins);
 router.patch("/api/admin/cap/admins/:id/role", /*protect, isCapAdmin,*/ updateAdminRole);
