@@ -403,3 +403,23 @@ exports.updateVendorOrderStatusAdmin = async (req, res) => {
     });
   }
 };
+
+exports.deleteVendorOrderAdmin = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!isObjectId(orderId)) {
+      return res.status(400).json({ success: false, message: "Invalid order ID" });
+    }
+    const deleted = await VendorOrder.findByIdAndDelete(orderId);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Vendor order not found" });
+    }
+    return res.status(200).json({ success: true, message: "Vendor order deleted successfully" });
+  } catch (err) {
+    console.error("deleteVendorOrderAdmin error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete vendor order",
+    });
+  }
+};

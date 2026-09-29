@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Product = require("../../manufacturer-portal/models/Product"); // adjust path if needed
+const Category = require("../../Admin/models/category.js");
 
 exports.getProducts = async (req, res) => {
   try {
@@ -30,9 +31,6 @@ exports.getProducts = async (req, res) => {
     // --------------------------
     const filter = { status: "approved" };
 
-    // We'll accumulate OR clauses safely here
-    const orClauses = [];
-
     // --------------------------
     // TIER FILTER
     // tier=all => no restriction
@@ -42,7 +40,7 @@ exports.getProducts = async (req, res) => {
     }
 
     // --------------------------
-    // CATEGORY / SUBCATEGORY FILTERS (ID OR SLUG)
+    // CATEGORY / SUBCATEGORY FILTERS (ID OR SLUG OR NAME)
     // --------------------------
     const catRaw = category ? String(category).trim() : "";
     const subRaw = subcategory ? String(subcategory).trim() : "";
@@ -50,54 +48,129 @@ exports.getProducts = async (req, res) => {
     const hasCat = Boolean(catRaw);
     const hasSub = Boolean(subRaw);
 
-    const catIsId = hasCat && isObjectId(catRaw);
-    const subIsId = hasSub && isObjectId(subRaw);
+    let catDoc = null;
+    let subDoc = null;
 
-    // If both provided => exact child view (no includeSubcats logic)
+    if (hasCat) {
+      if (isObjectId(catRaw)) {
+        catDoc = await Category.findById(catRaw).lean();
+      } else {
+        catDoc = await Category.findOne({
+          $or: [
+            { slug: catRaw },
+            { name: { $regex: new RegExp(`^${escapeRegex(catRaw.replace(/-/g, " "))}$`, "i") } },
+            { name: { $regex: new RegExp(`^${escapeRegex(catRaw)}$`, "i") } }
+          ]
+        }).lean();
+      }
+    }
+
+    if (hasSub) {
+      if (isObjectId(subRaw)) {
+        subDoc = await Category.findById(subRaw).lean();
+      } else {
+        const subConditions = [
+          { slug: subRaw },
+          { name: { $regex: new RegExp(`^${escapeRegex(subRaw.replace(/-/g, " "))}$`, "i") } },
+          { name: { $regex: new RegExp(`^${escapeRegex(subRaw)}$`, "i") } }
+        ];
+        if (catDoc) {
+          subDoc = await Category.findOne({ parentId: catDoc._id, $or: subConditions }).lean();
+        }
+        if (!subDoc) {
+          subDoc = await Category.findOne({ $or: subConditions }).lean();
+        }
+      }
+    }
+
+    const andConditions = [];
+
+    // If both provided => exact subcategory view
     if (hasCat && hasSub) {
-      if (catIsId) {
-        filter.categoryId = new mongoose.Types.ObjectId(catRaw);
-      } else {
-        filter.category = { $regex: new RegExp(`^${escapeRegex(catRaw)}$`, "i") };
-      }
+      const subId = subDoc ? subDoc._id : (isObjectId(subRaw) ? new mongoose.Types.ObjectId(subRaw) : null);
+      const subTerms = [
+        subRaw,
+        subRaw.replace(/-/g, " "),
+        subDoc?.slug,
+        subDoc?.name
+      ].filter(Boolean);
 
-      if (subIsId) {
-        filter.subCategoryId = new mongoose.Types.ObjectId(subRaw);
-      } else {
-        filter.subcategory = { $regex: new RegExp(`^${escapeRegex(subRaw)}$`, "i") };
-      }
-    } else if (hasCat) {
-      // Parent view
-      if (catIsId) {
-        filter.categoryId = new mongoose.Types.ObjectId(catRaw);
+      const subClauses = [];
+      if (subId) subClauses.push({ subCategoryId: subId });
+      subTerms.forEach((term) => {
+        subClauses.push({ subcategory: { $regex: new RegExp(`^${escapeRegex(term)}$`, "i") } });
+      });
 
-        const inc = String(includeSubcats).toLowerCase() !== "false";
-        if (!inc) {
-          // Only products directly under parent (no subCategoryId)
-          orClauses.push(
-            { subCategoryId: null },
-            { subCategoryId: { $exists: false } }
-          );
-        }
-      } else {
-        filter.category = { $regex: new RegExp(`^${escapeRegex(catRaw)}$`, "i") };
+      const catId = catDoc ? catDoc._id : (isObjectId(catRaw) ? new mongoose.Types.ObjectId(catRaw) : null);
+      const catTerms = [
+        catRaw,
+        catRaw.replace(/-/g, " "),
+        catDoc?.slug,
+        catDoc?.name
+      ].filter(Boolean);
 
-        const inc = String(includeSubcats).toLowerCase() !== "false";
-        if (!inc) {
-          // Only products directly under parent (no subcategory string)
-          orClauses.push(
-            { subcategory: { $exists: false } },
-            { subcategory: "" },
-            { subcategory: null }
-          );
-        }
-      }
+      const catClauses = [];
+      if (catId) catClauses.push({ categoryId: catId });
+      catTerms.forEach((term) => {
+        catClauses.push({ category: { $regex: new RegExp(`^${escapeRegex(term)}$`, "i") } });
+      });
+
+      if (subClauses.length) andConditions.push({ $or: subClauses });
+      if (catClauses.length) andConditions.push({ $or: catClauses });
     } else if (hasSub) {
-      // If only subcategory provided
-      if (subIsId) {
-        filter.subCategoryId = new mongoose.Types.ObjectId(subRaw);
+      const subId = subDoc ? subDoc._id : (isObjectId(subRaw) ? new mongoose.Types.ObjectId(subRaw) : null);
+      const subTerms = [
+        subRaw,
+        subRaw.replace(/-/g, " "),
+        subDoc?.slug,
+        subDoc?.name
+      ].filter(Boolean);
+
+      const subClauses = [];
+      if (subId) subClauses.push({ subCategoryId: subId });
+      subTerms.forEach((term) => {
+        subClauses.push({ subcategory: { $regex: new RegExp(`^${escapeRegex(term)}$`, "i") } });
+      });
+
+      if (subClauses.length) andConditions.push({ $or: subClauses });
+    } else if (hasCat) {
+      const catId = catDoc ? catDoc._id : (isObjectId(catRaw) ? new mongoose.Types.ObjectId(catRaw) : null);
+      const inc = String(includeSubcats).toLowerCase() !== "false";
+
+      if (inc && catDoc) {
+        const childCats = await Category.find({ parentId: catDoc._id }).select("_id slug name").lean();
+        const allCatIds = [catDoc._id, ...childCats.map((c) => c._id)];
+        const allSubIds = childCats.map((c) => c._id);
+        const allNames = [
+          catRaw,
+          catRaw.replace(/-/g, " "),
+          catDoc.slug,
+          catDoc.name,
+          ...childCats.flatMap((c) => [c.slug, c.name, c.slug.replace(/-/g, " ")])
+        ].filter(Boolean);
+
+        const parentClauses = [
+          { categoryId: { $in: allCatIds } },
+          ...(allSubIds.length ? [{ subCategoryId: { $in: allSubIds } }] : []),
+          { category: { $in: allNames.map((n) => new RegExp(`^${escapeRegex(n)}$`, "i")) } }
+        ];
+
+        andConditions.push({ $or: parentClauses });
       } else {
-        filter.subcategory = { $regex: new RegExp(`^${escapeRegex(subRaw)}$`, "i") };
+        const catTerms = [
+          catRaw,
+          catRaw.replace(/-/g, " "),
+          catDoc?.slug,
+          catDoc?.name
+        ].filter(Boolean);
+
+        const catClauses = [];
+        if (catId) catClauses.push({ categoryId: catId });
+        catTerms.forEach((term) => {
+          catClauses.push({ category: { $regex: new RegExp(`^${escapeRegex(term)}$`, "i") } });
+        });
+
+        if (catClauses.length) andConditions.push({ $or: catClauses });
       }
     }
 
@@ -107,29 +180,30 @@ exports.getProducts = async (req, res) => {
     if (q && String(q).trim()) {
       const rx = new RegExp(escapeRegex(String(q).trim()), "i");
 
-      orClauses.push(
-        { name: rx },
-        { sku: rx },
-        { description: rx },
-        { shortDescription: rx }
-      );
+      andConditions.push({
+        $or: [
+          { name: rx },
+          { sku: rx },
+          { description: rx },
+          { shortDescription: rx }
+        ]
+      });
     }
 
-    // Apply OR clauses if any (merged safely)
-    if (orClauses.length) {
-      filter.$or = orClauses;
+    if (andConditions.length) {
+      filter.$and = andConditions;
     }
 
     // --------------------------
     // PRICE RANGE
     // --------------------------
-    const min = Number(minPrice);
-    const max = Number(maxPrice);
+    const hasMin = minPrice !== undefined && String(minPrice).trim() !== "" && !isNaN(Number(minPrice));
+    const hasMax = maxPrice !== undefined && String(maxPrice).trim() !== "" && !isNaN(Number(maxPrice));
 
-    if (!Number.isNaN(min) || !Number.isNaN(max)) {
+    if (hasMin || hasMax) {
       filter.price = {};
-      if (!Number.isNaN(min)) filter.price.$gte = min;
-      if (!Number.isNaN(max)) filter.price.$lte = max;
+      if (hasMin) filter.price.$gte = Number(minPrice);
+      if (hasMax) filter.price.$lte = Number(maxPrice);
     }
 
     // --------------------------

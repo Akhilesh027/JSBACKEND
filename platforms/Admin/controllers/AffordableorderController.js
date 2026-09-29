@@ -300,3 +300,17 @@ exports.updateOrderStatus = async (req, res) => {
     return res.status(500).json({ message: err.message || "Server error" });
   }
 };
+
+exports.deleteOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await Order.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    return res.status(200).json({ success: true, message: "Order deleted successfully" });
+  } catch (err) {
+    console.error("Affordable deleteOrder error:", err);
+    return res.status(500).json({ success: false, message: err.message || "Failed to delete order" });
+  }
+};

@@ -43,16 +43,13 @@ exports.getProducts = async (req, res) => {
       query.manufacturer = manufacturer;
     }
 
-    if (minPrice !== undefined || maxPrice !== undefined) {
+    const hasMin = minPrice !== undefined && String(minPrice).trim() !== "" && !isNaN(Number(minPrice));
+    const hasMax = maxPrice !== undefined && String(maxPrice).trim() !== "" && !isNaN(Number(maxPrice));
+
+    if (hasMin || hasMax) {
       query.price = {};
-
-      if (minPrice !== undefined && String(minPrice).trim() !== "") {
-        query.price.$gte = Number(minPrice);
-      }
-
-      if (maxPrice !== undefined && String(maxPrice).trim() !== "") {
-        query.price.$lte = Number(maxPrice);
-      }
+      if (hasMin) query.price.$gte = Number(minPrice);
+      if (hasMax) query.price.$lte = Number(maxPrice);
     }
 
     if (search && String(search).trim()) {

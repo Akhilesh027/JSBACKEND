@@ -364,7 +364,7 @@ exports.uploadVendorDocuments = async (req, res) => {
         vendorId,
         documentName: documentName || file.originalname,
         fileName: file.filename,
-        filePath: file.path,
+        filePath: file.path ? file.path.replace(/\\/g, "/") : file.filename,
         fileSize: file.size,
         category: category || "General",
         mimeType: file.mimetype,

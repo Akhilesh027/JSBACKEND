@@ -241,3 +241,30 @@ exports.getAllOrders = async (req, res) => {
     return res.status(500).json({ message: "Failed to fetch all orders" });
   }
 };
+
+exports.deleteOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid order ID" });
+    }
+
+    const [affDeleted, midDeleted, luxDeleted] = await Promise.all([
+      AffordableOrder.findByIdAndDelete(id),
+      MidrangeOrder.findByIdAndDelete(id),
+      LuxuryOrder.findByIdAndDelete(id),
+    ]);
+
+    if (!affDeleted && !midDeleted && !luxDeleted) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Order deleted successfully",
+    });
+  } catch (err) {
+    console.error("AllOrders deleteOrder error:", err);
+    return res.status(500).json({ success: false, message: "Failed to delete order" });
+  }
+};

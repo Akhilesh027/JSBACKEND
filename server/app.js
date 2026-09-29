@@ -19,7 +19,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 // Static files (single line)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // CORS allowlist
 const ALLOWED_ORIGINS = [
@@ -66,7 +66,10 @@ app.use(
 );
 
 // Security (helmet + hpp) — must come before routes
-app.use(helmet({ crossOriginEmbedderPolicy: false }));
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 app.use(hpp());
 
 // Routes

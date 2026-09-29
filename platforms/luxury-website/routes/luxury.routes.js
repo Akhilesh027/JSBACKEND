@@ -2,7 +2,11 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { luxuryAuthMiddleware, vipMiddleware, platinumMiddleware } = require('../middleware/authMiddleware.js');
-const { getApprovedLuxuryProducts, getApprovedLuxuryProductById } = require("../controllers/luxuryProducts.controller");
+const {
+  getApprovedLuxuryProducts,
+  getApprovedLuxuryProductById,
+  searchLuxuryProducts,
+} = require("../controllers/luxuryProducts.controller");
 const { getCart, updateCart, mergeCart } = require("../controllers/luxuryCart.controller.js");
 const {
   getAddresses,
@@ -39,7 +43,8 @@ router.get('/api/luxury/exclusive-collections', luxuryAuthMiddleware, platinumMi
   });
 });
 
-// ✅ Public (or keep protected if you want)
+// ✅ Public Products & Search
+router.get("/api/luxury/products/search", searchLuxuryProducts);
 router.get("/api/luxury/products", getApprovedLuxuryProducts);
 router.get("/api/luxury/products/:id", getApprovedLuxuryProductById);
 

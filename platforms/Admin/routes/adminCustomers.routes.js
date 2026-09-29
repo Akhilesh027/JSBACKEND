@@ -64,7 +64,7 @@ router.get("/api/admin/manufacturers", adminOrderController.getManufacturersForO
 router.get("/api/admin/manufacturers/:id", adminOrderController.getManufacturerById);
 router.post("/api/admin/orders", adminOrderController.createOrder);
 router.get("/api/admin/orders", adminOrderController.listOrders);
-// router.get("/api/admin/orders", adminOrderController.getAllOrders); // ❌ duplicate route, remove or change path
+router.delete("/api/admin/orders/purchase/:id", adminOrderController.deleteOrder);
 
 // --------------------
 // Dashboard
@@ -79,6 +79,7 @@ router.get("/api/admin/affordable/orders", AffordableorderController.getOrders);
 router.patch("/api/admin/affordable/orders/:id/approve", AffordableorderController.approveOrder);
 router.patch("/api/admin/affordable/orders/:id/reject", AffordableorderController.rejectOrder);
 router.patch("/api/admin/affordable/orders/:id/status", AffordableorderController.updateOrderStatus);
+router.delete("/api/admin/affordable/orders/:id", AffordableorderController.deleteOrder);
 
 // --------------------
 // ✅ Website Orders - Midrange (NEW)
@@ -88,15 +89,20 @@ router.patch("/api/admin/midrange/orders/:id/approve", MidrangeorderController.a
 router.patch("/api/admin/midrange/orders/:id/reject", MidrangeorderController.rejectMidrangeOrder);
 router.patch("/api/admin/midrange/orders/:id/status", MidrangeorderController.updateOrderStatus);
 router.get("/api/admin/midrange/orders/:id", MidrangeorderController.getMidrangeOrderById);
+router.delete("/api/admin/midrange/orders/:id", MidrangeorderController.deleteMidrangeOrder);
+
 // --------------------
 // ✅ Website Orders - Luxury (optional later)
 // --------------------
- const LuxuryorderController = require("../controllers/adminLuxury.controller");
- router.get("/api/admin/luxury/orders", LuxuryorderController.getLuxuryOrdersAdmin);
- router.patch("/api/admin/luxury/orders/:id/approve", LuxuryorderController.approveLuxuryOrder);
- router.patch("/api/admin/luxury/orders/:id/status", LuxuryorderController.updateLuxuryOrderStatus);
+const LuxuryorderController = require("../controllers/adminLuxury.controller");
+router.get("/api/admin/luxury/orders", LuxuryorderController.getLuxuryOrdersAdmin);
+router.patch("/api/admin/luxury/orders/:id/approve", LuxuryorderController.approveLuxuryOrder);
+router.patch("/api/admin/luxury/orders/:id/status", LuxuryorderController.updateLuxuryOrderStatus);
+router.delete("/api/admin/luxury/orders/:id", LuxuryorderController.deleteLuxuryOrder);
 
+// ✅ All Orders (Universal delete + get)
 router.get("/api/admin/orders/all", AllOrdersController.getAllOrders);
+router.delete("/api/admin/orders/:id", AllOrdersController.deleteOrder);
 
 // --------------------
 // CAP Admin Management
@@ -127,14 +133,15 @@ const {
   approveVendorOrderAdmin,
   rejectVendorOrderAdmin,
   updateVendorOrderStatusAdmin,
+  deleteVendorOrderAdmin,
 } = require("../controllers/adminVendorOrdersController");
 
 router.get("/api/admin/vendor-orders", getVendorOrdersAdmin);
 
 router.patch("/api/admin/vendor-orders/:orderId/approve", approveVendorOrderAdmin);
-
 router.patch("/api/admin/vendor-orders/:orderId/reject", rejectVendorOrderAdmin);
 router.patch("/api/admin/vendor-orders/:orderId/status", updateVendorOrderStatusAdmin);
+router.delete("/api/admin/vendor-orders/:orderId", deleteVendorOrderAdmin);
 
 const {
   getAllVendors,

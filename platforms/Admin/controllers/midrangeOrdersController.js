@@ -377,3 +377,22 @@ exports.getMidrangeOrderById = async (req, res) => {
     });
   }
 };
+
+/* ---------------- DELETE ORDER ---------------- */
+
+exports.deleteMidrangeOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid order ID" });
+    }
+    const deleted = await MidrangeOrder.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    return res.status(200).json({ success: true, message: "Order deleted successfully" });
+  } catch (err) {
+    console.error("Midrange deleteMidrangeOrder error:", err);
+    return res.status(500).json({ success: false, message: "Failed to delete order", error: err.message });
+  }
+};
