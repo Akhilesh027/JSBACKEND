@@ -76,13 +76,27 @@ exports.updatePortfolio = async (req, res) => {
 // ========== ADD OR UPDATE VIDEO (expects vendorId in body) ==========
 exports.addOrUpdateVideo = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: "No video file uploaded" });
-    }
-    const { vendorId, title, videoIndex } = req.body;
+    const { vendorId, title, videoIndex, videoUrl, url } = req.body;
     if (!vendorId) {
       return res.status(400).json({ success: false, message: "vendorId required" });
     }
+
+    let finalVideoUrl = (videoUrl || url || "").trim();
+
+    if (req.file) {
+      // Save file
+      const uploadDir = "uploads/portfolio/videos";
+      ensureDir(uploadDir);
+      const fileName = `${Date.now()}-${req.file.originalname}`;
+      const filePath = path.join(uploadDir, fileName);
+      fs.renameSync(req.file.path, filePath);
+      finalVideoUrl = filePath.replace(/\\/g, "/");
+    }
+
+    if (!finalVideoUrl) {
+      return res.status(400).json({ success: false, message: "Please provide a video file or a video link" });
+    }
+
     const vendor = await Vendor.findById(vendorId);
     if (!vendor) {
       return res.status(404).json({ success: false, message: "Vendor not found" });
@@ -90,24 +104,16 @@ exports.addOrUpdateVideo = async (req, res) => {
     if (!vendor.portfolio) vendor.portfolio = {};
     if (!vendor.portfolio.videos) vendor.portfolio.videos = [];
 
-    // Save file
-    const uploadDir = "uploads/portfolio/videos";
-    ensureDir(uploadDir);
-    const fileName = `${Date.now()}-${req.file.originalname}`;
-    const filePath = path.join(uploadDir, fileName);
-    fs.renameSync(req.file.path, filePath);
-    const fileUrl = filePath.replace(/\\/g, "/");
+    const newVideo = { title: title || "Untitled Video", url: finalVideoUrl };
 
-    const newVideo = { title: title || "Untitled Video", url: fileUrl };
-
-    if (videoIndex !== undefined && vendor.portfolio.videos[videoIndex]) {
-      vendor.portfolio.videos[videoIndex] = newVideo;
+    if (videoIndex !== undefined && videoIndex !== "" && vendor.portfolio.videos[Number(videoIndex)]) {
+      vendor.portfolio.videos[Number(videoIndex)] = newVideo;
     } else {
       vendor.portfolio.videos.push(newVideo);
     }
     await vendor.save();
 
-    res.json({ success: true, videoUrl: fileUrl, videos: vendor.portfolio.videos });
+    res.json({ success: true, videoUrl: finalVideoUrl, videos: vendor.portfolio.videos });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Video upload failed" });
