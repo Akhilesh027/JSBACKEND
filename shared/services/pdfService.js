@@ -165,7 +165,7 @@ function buildInvoiceHTML({ order, business }) {
   const b = business || {
     name: "JAGHSORA LUXORE PRIVATE LIMITED (JS GALLOR)",
     address:
-      "Road No 1, Bagayath layout, 3rd floor, Plot 288, Uppal, Hyderabad, Telangana 500039",
+      "3rd Floor, Plot No. 288, Road No. 1, Bhagayath Layout, Uppal, Hyderabad, Telangana 500039",
     email: "info@jsgallor.com",
     phone: "+91-XXXXXXXXXX",
     gst: "36AAHCJ1470F1ZP",
